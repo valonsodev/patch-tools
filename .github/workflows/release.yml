@@ -41,7 +41,9 @@ jobs:
           workspaces: patch-tools -> target
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: |
+          sudo apt update
+          sudo apt install -y just
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
