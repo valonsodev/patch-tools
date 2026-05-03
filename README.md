@@ -13,6 +13,25 @@ It's a Rust CLI tool with a bundled Kotlin scripting engine wrapping [`morphe-pa
 
 ![Demo](.github/demo.gif)
 
+## How To Use
+
+Start in an empty working directory and scaffold the script files:
+
+```sh
+patch-tools scaffold
+```
+
+Then read the generated [`AGENTS.md`](patch-tools/templates/AGENTS.md), even if you are a human.
+It is the practical guide for how to write and iterate on `main.kts`.
+
+The common loop is:
+
+```sh
+patch-tools daemon start
+patch-tools load path/to/app.apk
+patch-tools run main.kts
+```
+
 ## Available Commands
 
 Global option:
