@@ -40,10 +40,10 @@ jobs:
         with:
           workspaces: patch-tools -> target
 
-      - name: Install just
+      - name: Install build tools
         run: |
           sudo apt update
-          sudo apt install -y just
+          sudo apt install -y just protobuf-compiler
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
