@@ -1,0 +1,53 @@
+[versions]
+kotlin = "2.3.20"
+kotlinx = "1.10.2"
+
+# Morphe stuff
+morphe-patcher = "1.5.0"
+morphe-patches-library = "1.2.0"
+morphe-smali = "d856bad65f"
+
+# Shadow (for fat JAR)
+shadow = "9.4.1"
+wire = "6.2.0"
+
+# Logging
+kotlin-logging-jvm = "8.0.01"
+slf4j = "2.0.17"
+logback = "1.5.32"
+
+guava = "33.6.0-jre"
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx" }
+
+# Scripting
+kotlin-scripting-jvm = { module = "org.jetbrains.kotlin:kotlin-scripting-jvm", version.ref = "kotlin" }
+kotlin-scripting-common = { module = "org.jetbrains.kotlin:kotlin-scripting-common", version.ref = "kotlin" }
+kotlin-scripting-jvm-host = { module = "org.jetbrains.kotlin:kotlin-scripting-jvm-host", version.ref = "kotlin" }
+kotlin-scripting-dependencies = { module = "org.jetbrains.kotlin:kotlin-scripting-dependencies", version.ref = "kotlin" }
+kotlin-scripting-dependencies-maven = { module = "org.jetbrains.kotlin:kotlin-scripting-dependencies-maven", version.ref = "kotlin" }
+
+# Morphe stuff
+morphe-patcher = { module = "app.morphe:morphe-patcher", version.ref = "morphe-patcher" }
+morphe-patches-library = { module = "app.morphe:morphe-patches-library", version.ref = "morphe-patches-library" }
+morphe-smali = { module = "com.github.MorpheApp.smali:smali", version.ref = "morphe-smali" }
+morphe-baksmali = { module = "com.github.MorpheApp.smali:smali-baksmali", version.ref = "morphe-smali" }
+
+# Reflection
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+
+# Logging
+kotlin-logging-jvm = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging-jvm" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+wire-runtime = { module = "com.squareup.wire:wire-runtime", version.ref = "wire" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+wire = { id = "com.squareup.wire", version.ref = "wire" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+[bundles]
+scripting = ["kotlin-scripting-jvm", "kotlin-scripting-common", "kotlin-scripting-jvm-host", "kotlin-scripting-dependencies", "kotlin-scripting-dependencies-maven"]
+logging = ["kotlin-logging-jvm", "slf4j-api", "logback-classic"]

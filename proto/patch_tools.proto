@@ -1,0 +1,386 @@
+syntax = "proto3";
+
+package patch_tools;
+
+option java_multiple_files = true;
+option java_package = "dev.valonso.tools.engine.proto";
+
+message ApkIdentity {
+  string id = 1;
+  string source_file_path = 2;
+  string package_name = 3;
+  string package_version = 4;
+}
+
+message ApkStatus {
+  ApkIdentity identity = 1;
+  uint32 class_count = 2;
+  uint32 method_count = 3;
+}
+
+message MethodInfoDto {
+  string unique_id = 1;
+  string defining_class = 2;
+  string name = 3;
+  string return_type = 4;
+  repeated string parameters = 5;
+  int32 access_flags = 6;
+  string class_name = 7;
+  string java_return_type = 8;
+  repeated string java_parameter_types = 9;
+  repeated string java_access_flags = 10;
+  string short_id = 11;
+  string java_signature = 12;
+}
+
+message MethodSignatureDto {
+  string return_type = 1;
+  int32 access_flags = 2;
+  repeated string parameters = 3;
+}
+
+message InstructionLiteral {
+  int64 value = 1;
+}
+
+message InstructionStringConst {
+  string string = 1;
+}
+
+message InstructionMethodCall {
+  string defining_class = 1;
+  bool same_defining_class = 2;
+  bool use_this_defining_class = 3;
+  string name = 4;
+  repeated string parameters = 5;
+  string return_type = 6;
+}
+
+message InstructionFieldAccess {
+  string defining_class = 1;
+  bool same_defining_class = 2;
+  bool use_this_defining_class = 3;
+  string name = 4;
+  string field_type = 5;
+}
+
+message InstructionNewInstance {
+  string instance_type = 1;
+}
+
+message InstructionInstanceOf {
+  string instance_type = 1;
+}
+
+message InstructionCheckCast {
+  string cast_type = 1;
+}
+
+message InstructionFeature {
+  uint32 index = 1;
+
+  oneof kind {
+    InstructionLiteral literal = 2;
+    InstructionStringConst string_const = 3;
+    InstructionMethodCall method_call = 4;
+    InstructionFieldAccess field_access = 5;
+    InstructionNewInstance new_instance = 6;
+    InstructionInstanceOf instance_of = 7;
+    InstructionCheckCast check_cast = 8;
+  }
+}
+
+message MethodFeaturesDto {
+  MethodSignatureDto signature = 1;
+  repeated InstructionFeature instructions = 2;
+}
+
+message MethodData {
+  MethodInfoDto info = 1;
+  MethodFeaturesDto features = 2;
+}
+
+message MethodDataList {
+  repeated MethodData items = 1;
+}
+
+message MatchedMethodDto {
+  string unique_id = 1;
+  string defining_class = 2;
+  string method_name = 3;
+  string return_type = 4;
+  repeated string parameters = 5;
+}
+
+message MethodDiffDto {
+  enum ChangeKind {
+    UNSPECIFIED = 0;
+    MODIFIED = 1;
+    ADDED = 2;
+    DELETED = 3;
+  }
+
+  string method_id = 1;
+  string original_smali = 2;
+  string modified_smali = 3;
+  ChangeKind change_kind = 4;
+}
+
+message ClassDiffDto {
+  enum ChangeKind {
+    UNSPECIFIED = 0;
+    ADDED = 1;
+    MODIFIED = 2;
+  }
+
+  string class_type = 1;
+  ChangeKind change_kind = 2;
+  string original_header = 3;
+  string modified_header = 4;
+}
+
+message ResourceChangeDto {
+  enum Kind {
+    UNSPECIFIED = 0;
+    ADDED = 1;
+    MODIFIED = 2;
+    DELETED = 3;
+  }
+
+  string relative_path = 1;
+  Kind kind = 2;
+  optional string original_content = 3;
+  optional string modified_content = 4;
+  optional string original_hash = 5;
+  optional string modified_hash = 6;
+}
+
+message ParameterList {
+  repeated string values = 1;
+}
+
+message MethodFingerprintDto {
+  optional string return_type = 1;
+  optional int32 access_flags = 2;
+  optional ParameterList parameters = 3;
+  repeated InstructionFeature instructions = 4;
+  uint32 size = 5;
+  string morphe_code = 6;
+}
+
+message EngineResultFingerprintMatches {
+  repeated MatchedMethodDto methods = 1;
+}
+
+message EngineResultBytecodeDiffResult {
+  repeated MethodDiffDto method_diffs = 1;
+  repeated ClassDiffDto class_diffs = 2;
+}
+
+message EngineResultResourcePatchResult {
+  repeated ResourceChangeDto resource_changes = 1;
+}
+
+message EngineResultGenericResult {
+  string type_name = 1;
+  string text_representation = 2;
+}
+
+message EngineResultItemError {
+  string message = 1;
+}
+
+message EngineResult {
+  oneof kind {
+    EngineResultFingerprintMatches fingerprint_matches = 1;
+    EngineResultBytecodeDiffResult bytecode_diff_result = 2;
+    EngineResultResourcePatchResult resource_patch_result = 3;
+    EngineResultGenericResult generic_result = 4;
+    EngineResultItemError item_error = 5;
+  }
+}
+
+message EngineEventItemResult {
+  string item_id = 1;
+  string apk_id = 2;
+  EngineResult result = 3;
+}
+
+message EngineEventScriptOutput {
+  string text = 1;
+  optional string item_id = 2;
+  optional string apk_id = 3;
+  optional string apk_label = 4;
+}
+
+message EngineEventRunCompleted {
+  uint32 total_items = 1;
+  uint32 total_apks = 2;
+  repeated string errors = 3;
+}
+
+message EngineEventRunFailed {
+  string error = 1;
+}
+
+message EngineEventPatchedApkSaved {
+  string apk_path = 1;
+  string apk_id = 2;
+  optional string item_id = 3;
+  optional string apk_label = 4;
+}
+
+message EngineEventPatchedApkSaveFailed {
+  string apk_id = 1;
+  optional string item_id = 2;
+  string error = 3;
+  optional string apk_label = 4;
+}
+
+message EngineEvent {
+  oneof kind {
+    EngineEventItemResult item_result = 1;
+    EngineEventRunCompleted run_completed = 2;
+    EngineEventRunFailed run_failed = 3;
+    EngineEventPatchedApkSaved patched_apk_saved = 4;
+    EngineEventPatchedApkSaveFailed patched_apk_save_failed = 5;
+    EngineEventScriptOutput script_output = 6;
+  }
+}
+
+message LoadApkRequest {
+  string path = 1;
+}
+
+message UnloadApkRequest {
+  string apk_id = 1;
+}
+
+message ExecuteRequest {
+  string script_path = 1;
+  optional uint32 fingerprint_result_cap = 2;
+  bool save_patched_apks = 3;
+}
+
+message GenerateFingerprintRequest {
+  string apk_id = 1;
+  string method_id = 2;
+  optional uint32 limit = 3;
+}
+
+message GenerateClassFingerprintRequest {
+  string apk_id = 1;
+  string class_id = 2;
+  optional uint32 limit = 3;
+}
+
+message SearchMethodsRequest {
+  string query = 1;
+  optional uint32 limit = 2;
+}
+
+message GetMethodSmaliRequest {
+  string apk_id = 1;
+  string method_id = 2;
+}
+
+message InspectMethodRequest {
+  string apk_id = 1;
+  string method_id = 2;
+}
+
+message StatusRequest {}
+
+message StopRequest {}
+
+message DaemonRequest {
+  oneof kind {
+    LoadApkRequest load_apk = 1;
+    UnloadApkRequest unload_apk = 2;
+    ExecuteRequest execute = 3;
+    GenerateFingerprintRequest generate_fingerprint = 4;
+    SearchMethodsRequest search_methods = 5;
+    GetMethodSmaliRequest get_method_smali = 6;
+    StatusRequest status = 7;
+    StopRequest stop = 8;
+    InspectMethodRequest inspect_method = 9;
+    GenerateClassFingerprintRequest generate_class_fingerprint = 10;
+  }
+}
+
+message ApkLoadedResponse {
+  ApkIdentity identity = 1;
+}
+
+message ApkUnloadedResponse {}
+
+message ExecutionResultResponse {
+  repeated EngineEvent events = 1;
+}
+
+message FingerprintResultResponse {
+  repeated MethodFingerprintDto fingerprints = 1;
+}
+
+message ClassFingerprintCandidateDto {
+  MethodFingerprintDto fingerprint = 1;
+  MatchedMethodDto source_method = 2;
+}
+
+message ClassFingerprintResultResponse {
+  string class_id = 1;
+  repeated ClassFingerprintCandidateDto fingerprints = 2;
+}
+
+message MethodInfoList {
+  repeated MethodInfoDto items = 1;
+}
+
+message SearchResultResponse {
+  map<string, MethodInfoList> results = 1;
+}
+
+message MethodSmaliResponse {
+  optional string smali = 1;
+}
+
+message StatusInfoResponse {
+  repeated ApkStatus apks = 1;
+  uint64 uptime_secs = 2;
+  uint32 daemon_pid = 3;
+}
+
+message ScoredInstruction {
+  InstructionFeature instruction = 1;
+  int32 stability_score = 2;
+  string label = 3;
+}
+
+message InspectMethodResponse {
+  string method_id = 1;
+  MethodSignatureDto signature = 2;
+  repeated ScoredInstruction scored_instructions = 3;
+  int32 total_stability_score = 4;
+}
+
+message OkResponse {}
+
+message ErrorResponse {
+  string message = 1;
+}
+
+message DaemonResponse {
+  oneof kind {
+    ApkLoadedResponse apk_loaded = 1;
+    ApkUnloadedResponse apk_unloaded = 2;
+    ExecutionResultResponse execution_result = 3;
+    FingerprintResultResponse fingerprint_result = 4;
+    SearchResultResponse search_result = 5;
+    MethodSmaliResponse method_smali = 6;
+    StatusInfoResponse status_info = 7;
+    OkResponse ok = 8;
+    ErrorResponse error = 9;
+    InspectMethodResponse inspect_method = 10;
+    ClassFingerprintResultResponse class_fingerprint_result = 11;
+  }
+}
