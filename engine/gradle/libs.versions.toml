@@ -4,7 +4,7 @@ kotlinx = "1.10.2"
 
 # Morphe stuff
 morphe-patcher = "1.5.0"
-morphe-patches-library = "1.2.0"
+morphe-patches-library = "1.3.0"
 morphe-smali = "d856bad65f"
 
 # Shadow (for fat JAR)
