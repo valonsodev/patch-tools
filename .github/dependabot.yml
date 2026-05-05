@@ -7,7 +7,7 @@ registries:
   morphe-github-packages:
     type: maven-repository
     url: https://maven.pkg.github.com/morpheapp/registry
-    username: ${{secrets.MORPHE_GPR_USER}}
+    username: x-access-token
     password: ${{secrets.MORPHE_GPR_KEY}}
 
 updates:
@@ -20,16 +20,16 @@ updates:
       - jitpack
       - morphe-github-packages
     allow:
-      - dependency-name: app.morphe:morphe-patcher
-      - dependency-name: app.morphe:morphe-patches-library
-      - dependency-name: com.github.MorpheApp.smali:smali
-      - dependency-name: com.github.MorpheApp.smali:smali-baksmali
+      - dependency-name: "app.morphe:morphe-patcher"
+      - dependency-name: "app.morphe:morphe-patches-library"
+      - dependency-name: "com.github.MorpheApp.smali:smali"
+      - dependency-name: "com.github.MorpheApp.smali:smali-baksmali"
     groups:
       morphe-engine:
         patterns:
-          - app.morphe:morphe-patcher
-          - app.morphe:morphe-patches-library
-          - com.github.MorpheApp.smali:smali
-          - com.github.MorpheApp.smali:smali-baksmali
+          - "app.morphe:morphe-patcher"
+          - "app.morphe:morphe-patches-library"
+          - "com.github.MorpheApp.smali:smali"
+          - "com.github.MorpheApp.smali:smali-baksmali"
     commit-message:
       prefix: deps
