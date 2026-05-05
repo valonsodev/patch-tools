@@ -1,14 +1,31 @@
 {
   "branches": [
-    "main",
-    {
-      "name": "dev",
-      "prerelease": "dev"
-    }
+    "main"
   ],
   "plugins": [
-    "@semantic-release/commit-analyzer",
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "releaseRules": [
+          {
+            "type": "deps",
+            "release": "patch"
+          },
+          {
+            "type": "build",
+            "scope": "deps",
+            "release": "patch"
+          },
+          {
+            "type": "chore",
+            "scope": "deps",
+            "release": "patch"
+          }
+        ]
+      }
+    ],
     "@semantic-release/release-notes-generator",
+    "./release/morphe-dependency-notes.cjs",
     [
       "@semantic-release/github",
       {
