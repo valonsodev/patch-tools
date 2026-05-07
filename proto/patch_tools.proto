@@ -274,6 +274,16 @@ message GenerateClassFingerprintRequest {
   optional uint32 limit = 3;
 }
 
+message CommonFingerprintTargetSelector {
+  string apk_id = 1;
+  string method_id = 2;
+}
+
+message GenerateCommonFingerprintRequest {
+  repeated CommonFingerprintTargetSelector targets = 1;
+  optional uint32 limit = 2;
+}
+
 message SearchMethodsRequest {
   string query = 1;
   optional uint32 limit = 2;
@@ -313,6 +323,7 @@ message DaemonRequest {
     InspectMethodRequest inspect_method = 9;
     GenerateClassFingerprintRequest generate_class_fingerprint = 10;
     MapMethodRequest map_method = 11;
+    GenerateCommonFingerprintRequest generate_common_fingerprint = 12;
   }
 }
 
@@ -338,6 +349,16 @@ message ClassFingerprintCandidateDto {
 message ClassFingerprintResultResponse {
   string class_id = 1;
   repeated ClassFingerprintCandidateDto fingerprints = 2;
+}
+
+message CommonFingerprintTargetDto {
+  ApkIdentity apk = 1;
+  MethodInfoDto method = 2;
+}
+
+message CommonFingerprintResultResponse {
+  repeated CommonFingerprintTargetDto targets = 1;
+  repeated MethodFingerprintDto fingerprints = 2;
 }
 
 message MethodInfoList {
@@ -403,5 +424,6 @@ message DaemonResponse {
     InspectMethodResponse inspect_method = 10;
     ClassFingerprintResultResponse class_fingerprint_result = 11;
     MethodMapResponse method_map = 12;
+    CommonFingerprintResultResponse common_fingerprint_result = 13;
   }
 }

@@ -72,6 +72,14 @@ Generates class-scoped fingerprint candidates.
   Java class name.
 - `-n <limit>` or `--limit <limit>`: maximum number of generated results to return.
 
+### `patch-tools common-fingerprint <apk> <method_id> <apk> <method_id>...`
+
+Generates candidate fingerprints shared by equivalent methods across loaded packages.
+
+- Pass at least two APK/method pairs.
+- Use `map` first when you need help finding the equivalent method in a newer APK.
+- `-n <limit>` or `--limit <limit>`: maximum number of generated fingerprints to return.
+
 ### `patch-tools search <query...>`
 
 Searches methods across loaded packages using fuzzy matching.
@@ -772,6 +780,13 @@ success; it must be the expected diff on the intended target.
 
 If a patch depends on a fingerprint, verify the fingerprint target first before trusting the patch
 result.
+
+If the user asks to migrate a patch or fingerprint to a newer app version, load both the old and new
+packages and use `patch-tools map <old_apk> <method_id> <new_apk>` to find the likely equivalent
+methods before editing code. Once the mapped methods are confirmed, try
+`patch-tools common-fingerprint ...` to derive a shared target; if no common fingerprint is found,
+use fresh `patch-tools fingerprint ...` output for the new version instead of carrying over old
+minified names by hand.
 
 If there is no diff, or the diff is on the wrong target, do not treat the run as success.
 

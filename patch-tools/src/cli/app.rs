@@ -2,6 +2,7 @@ use super::{Cli, Commands, DaemonAction, OutputFormat};
 use crate::daemon::{client::DaemonClient, runtime};
 use crate::install as run_install;
 use crate::output;
+use crate::types::CommonFingerprintTargetSelector;
 use anyhow::{Context, Result, bail};
 use clap::CommandFactory;
 use clap_complete::generate;
@@ -34,6 +35,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::ClassFingerprint { args, limit } => {
             let (apk, class_id) = split_optional_apk_selector(args, "class_id")?;
             handle_class_fingerprint(&sock, apk, class_id, limit, format.clone()).await?;
+        }
+        Commands::CommonFingerprint { args, limit } => {
+            let targets = split_common_fingerprint_targets(args)?;
+            handle_common_fingerprint(&sock, targets, limit, format.clone()).await?;
         }
         Commands::Search { query, limit } => {
             handle_search(&sock, query, limit, format.clone()).await?;
@@ -181,6 +186,24 @@ async fn handle_class_fingerprint(
     .await
 }
 
+async fn handle_common_fingerprint(
+    sock: &Path,
+    targets: Vec<CommonFingerprintTargetSelector>,
+    limit: u32,
+    format: OutputFormat,
+) -> Result<()> {
+    with_client(sock, |client| {
+        Box::pin(async move {
+            let resp = client
+                .generate_common_fingerprint(targets, Some(limit))
+                .await?;
+            output::print_response_checked(&resp, &format)?;
+            Ok(())
+        })
+    })
+    .await
+}
+
 async fn handle_search(
     sock: &Path,
     query: Vec<String>,
@@ -258,6 +281,24 @@ fn split_optional_apk_selector(
     }
 
     Ok((Some(first), second))
+}
+
+fn split_common_fingerprint_targets(
+    args: Vec<String>,
+) -> Result<Vec<CommonFingerprintTargetSelector>> {
+    if args.len() < 4 || args.len() % 2 != 0 {
+        bail!(
+            "common-fingerprint expects at least 2 APK/method pairs: <APK> <METHOD_ID> <APK> <METHOD_ID>..."
+        );
+    }
+
+    Ok(args
+        .chunks_exact(2)
+        .map(|pair| CommonFingerprintTargetSelector {
+            apk_id: pair[0].clone(),
+            method_id: pair[1].clone(),
+        })
+        .collect())
 }
 
 type ClientFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + 'a>>;

@@ -4,14 +4,15 @@ use crate::fingerprint::{ClassFingerprintCandidate, FingerprintIndex};
 use crate::search;
 use crate::types::{
     ApkIdentity, ApkLoadedResponse, ApkStatus, ApkUnloadedResponse, ClassFingerprintCandidateDto,
-    ClassFingerprintResultResponse, DaemonRequest, DaemonResponse, ExecutionResultResponse,
-    FingerprintResultResponse, MatchedMethodDto, MethodData, MethodFingerprintDto, MethodInfoDto,
-    MethodInfoList, MethodMapCandidateDto, MethodMapResponse, MethodSmaliResponse,
-    SearchResultResponse, StatusInfoResponse, daemon_request, daemon_response,
+    ClassFingerprintResultResponse, CommonFingerprintResultResponse, CommonFingerprintTargetDto,
+    DaemonRequest, DaemonResponse, ExecutionResultResponse, FingerprintResultResponse,
+    MatchedMethodDto, MethodData, MethodFingerprintDto, MethodInfoDto, MethodInfoList,
+    MethodMapCandidateDto, MethodMapResponse, MethodSmaliResponse, SearchResultResponse,
+    StatusInfoResponse, daemon_request, daemon_response,
 };
 use anyhow::{Context, Result};
 use nucleo_matcher::Utf32String;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::path::Path;
 use std::sync::Arc;
@@ -309,6 +310,9 @@ async fn dispatch(
         daemon_request::Kind::GenerateClassFingerprint(generate) => {
             handle_generate_class_fingerprint(state, generate).await
         }
+        daemon_request::Kind::GenerateCommonFingerprint(generate) => {
+            handle_generate_common_fingerprint(state, generate).await
+        }
         daemon_request::Kind::SearchMethods(search_methods) => {
             handle_search_methods(state, search_methods).await
         }
@@ -545,6 +549,105 @@ fn generate_class_fingerprint_response(
             )),
         },
         Err(error) => DaemonResponse::error(format!("{error:#}")),
+    }
+}
+
+struct ResolvedCommonFingerprintTarget {
+    apk: Arc<ApkData>,
+    method_id: String,
+}
+
+async fn handle_generate_common_fingerprint(
+    state: &Arc<RwLock<SharedState>>,
+    generate: crate::types::GenerateCommonFingerprintRequest,
+) -> DaemonResponse {
+    let limit = generate.limit.unwrap_or(8) as usize;
+
+    if generate.targets.len() < 2 {
+        return DaemonResponse::error("common-fingerprint requires at least 2 APK/method pairs");
+    }
+
+    let targets = {
+        let state = state.read().await;
+        let mut seen_apks = HashSet::new();
+        let mut resolved = Vec::with_capacity(generate.targets.len());
+
+        for target in generate.targets {
+            let apk_id = match resolve_apk_selector(&state, &target.apk_id) {
+                Ok(apk_id) => apk_id,
+                Err(error) => return DaemonResponse::error(error),
+            };
+
+            if !seen_apks.insert(apk_id.clone()) {
+                return DaemonResponse::error(format!(
+                    "common-fingerprint expects one method per APK; '{}' resolves to an APK already used in this request",
+                    target.apk_id
+                ));
+            }
+
+            let Some(apk) = state.apks.get(&apk_id).cloned() else {
+                return DaemonResponse::error(format_apk_not_found_error(&state, &target.apk_id));
+            };
+
+            let Some(method_id) = resolve_method_id(&apk, &target.method_id) else {
+                return DaemonResponse::error(format!(
+                    "Method not found in {}: {}",
+                    apk_display_name(&apk.identity),
+                    target.method_id
+                ));
+            };
+
+            resolved.push(ResolvedCommonFingerprintTarget { apk, method_id });
+        }
+
+        resolved
+    };
+
+    match tokio::task::spawn_blocking(move || common_fingerprint_response(targets, limit)).await {
+        Ok(response) => response,
+        Err(error) => blocking_task_error("common fingerprint generation", &error),
+    }
+}
+
+fn common_fingerprint_response(
+    targets: Vec<ResolvedCommonFingerprintTarget>,
+    limit: usize,
+) -> DaemonResponse {
+    let target_refs = targets
+        .iter()
+        .map(|target| (&target.apk.fingerprint_index, target.method_id.as_str()))
+        .collect::<Vec<_>>();
+
+    let fingerprints = match crate::fingerprint::generate_common(target_refs, limit) {
+        Ok(fingerprints) => fingerprints,
+        Err(error) => return DaemonResponse::error(format!("{error:#}")),
+    };
+
+    let mut target_dtos = Vec::with_capacity(targets.len());
+    for target in targets {
+        let Some(method) = target
+            .apk
+            .method_infos
+            .iter()
+            .find(|method| method.unique_id == target.method_id)
+            .cloned()
+        else {
+            return DaemonResponse::error(format!("Method not found: {}", target.method_id));
+        };
+
+        target_dtos.push(CommonFingerprintTargetDto {
+            apk: Some(target.apk.identity.clone()),
+            method: Some(method),
+        });
+    }
+
+    DaemonResponse {
+        kind: Some(daemon_response::Kind::CommonFingerprintResult(
+            CommonFingerprintResultResponse {
+                targets: target_dtos,
+                fingerprints,
+            },
+        )),
     }
 }
 

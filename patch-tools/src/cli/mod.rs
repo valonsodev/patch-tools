@@ -71,6 +71,18 @@ pub enum Commands {
         #[arg(long, short = 'n', default_value_t = 8)]
         limit: u32,
     },
+    /// Generate fingerprints shared by equivalent methods across APKs
+    #[command(
+        override_usage = "patch-tools common-fingerprint [OPTIONS] <APK> <METHOD_ID> <APK> <METHOD_ID>..."
+    )]
+    CommonFingerprint {
+        /// APK/method selector pairs
+        #[arg(required = true, value_name = "APK_OR_METHOD_ID", num_args = 4..)]
+        args: Vec<String>,
+        /// Maximum number of fingerprints to return after ranking
+        #[arg(long, short = 'n', default_value_t = 8)]
+        limit: u32,
+    },
     /// Search methods across loaded APKs
     Search {
         /// Search query terms. Multiple values are joined with spaces.

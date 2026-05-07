@@ -1,4 +1,5 @@
 mod candidates;
+mod common;
 mod generate;
 mod index;
 mod map;
@@ -7,6 +8,7 @@ mod tokens;
 mod uniqueness;
 mod variants;
 
+pub use common::generate_common;
 pub use generate::{
     ClassFingerprintCandidate, apply_class_fingerprint_to_results,
     best_class_fingerprint_for_method, generate_all, generate_class_fingerprints,

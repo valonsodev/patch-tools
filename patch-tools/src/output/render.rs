@@ -58,6 +58,9 @@ pub(super) fn render_with(response: &DaemonResponse, fmt: &dyn Formatter) -> Ren
         daemon_response::Kind::ClassFingerprintResult(payload) => {
             stdout_only(render_class_fingerprints(payload, fmt))
         }
+        daemon_response::Kind::CommonFingerprintResult(payload) => {
+            render_common_fingerprint_result(payload, fmt)
+        }
         daemon_response::Kind::SearchResult(payload) => render_search_result(payload, fmt),
         daemon_response::Kind::MethodMap(payload) => render_method_map(payload, fmt),
         daemon_response::Kind::MethodSmali(payload) => render_method_smali(payload, fmt),
@@ -198,6 +201,73 @@ fn render_fingerprint_result(
             "{}\n\n",
             style::bold(&format!(
                 "{} fingerprint(s). Use the results below as-is; they already target unique matches",
+                payload.fingerprints.len()
+            ))
+        ));
+        for (index, fingerprint) in payload.fingerprints.iter().enumerate() {
+            output.push_stdout(format!("{}\n", style::cyan(&format!("#{}", index + 1))));
+            output.push_stdout(fmt.code_block("", &fingerprint.morphe_code));
+        }
+    }
+
+    output
+}
+
+fn render_common_fingerprint_result(
+    payload: &crate::types::CommonFingerprintResultResponse,
+    fmt: &dyn Formatter,
+) -> RenderOutput {
+    let mut output = RenderOutput::default();
+    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+
+    if is_md {
+        output.push_stdout(fmt.heading(2, "Common Fingerprints"));
+        output.push_stdout("Targets:\n");
+        for target in &payload.targets {
+            let apk = target
+                .apk
+                .as_ref()
+                .expect("validated common fingerprint response missing apk");
+            let method = target
+                .method
+                .as_ref()
+                .expect("validated common fingerprint response missing method");
+            output.push_stdout(fmt.bullet(&format!(
+                "{}: {}",
+                fmt.code(&apk_identity_label(apk)),
+                fmt.smali_method_id(method)
+            )));
+        }
+        output.push_stdout(format!(
+            "\nGenerated {} common fingerprint(s). Each result uniquely targets the selected method in every APK.\n\n",
+            payload.fingerprints.len()
+        ));
+        for (index, fingerprint) in payload.fingerprints.iter().enumerate() {
+            output.push_stdout(fmt.heading(3, &format!("Fingerprint {}", index + 1)));
+            output.push_stdout(fmt.code_block("kotlin", &fingerprint.morphe_code));
+        }
+    } else {
+        output.push_stdout(format!("{}\n", style::bold("Common fingerprints")));
+        for target in &payload.targets {
+            let apk = target
+                .apk
+                .as_ref()
+                .expect("validated common fingerprint response missing apk");
+            let method = target
+                .method
+                .as_ref()
+                .expect("validated common fingerprint response missing method");
+            output.push_stdout(format!(
+                "  {} {} -> {}\n",
+                style::dimmed("target:"),
+                apk_identity_label(apk),
+                fmt.smali_method_id(method)
+            ));
+        }
+        output.push_stdout(format!(
+            "\n{}\n\n",
+            style::bold(&format!(
+                "{} common fingerprint(s). Each result uniquely targets the selected method in every APK",
                 payload.fingerprints.len()
             ))
         ));

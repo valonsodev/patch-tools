@@ -73,6 +73,17 @@ impl DaemonRequest {
         }
     }
 
+    pub fn generate_common_fingerprint(
+        targets: Vec<CommonFingerprintTargetSelector>,
+        limit: Option<u32>,
+    ) -> Self {
+        Self {
+            kind: Some(daemon_request::Kind::GenerateCommonFingerprint(
+                GenerateCommonFingerprintRequest { targets, limit },
+            )),
+        }
+    }
+
     pub fn search_methods(query: impl Into<String>, limit: Option<u32>) -> Self {
         Self {
             kind: Some(daemon_request::Kind::SearchMethods(SearchMethodsRequest {

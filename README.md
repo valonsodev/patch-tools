@@ -49,6 +49,7 @@ Commands:
 - `scaffold`: create a `main.kts` and `AGENTS.md` in the current directory
 - `fingerprint [apk] <method_id> [-n, --limit <count>]`: generate method fingerprints; omit `apk` when exactly one APK is loaded
 - `class-fingerprint [apk] <class_id> [-n, --limit <count>]`: generate class fingerprints; omit `apk` when exactly one APK is loaded
+- `common-fingerprint <apk> <method_id> <apk> <method_id>... [-n, --limit <count>]`: generate fingerprints shared by equivalent methods across APKs
 - `search <query...> [-n, --limit <count>]`: fuzzy search methods across loaded APKs by name
 - `map <old_apk> <method_id> <new_apk> [-n, --limit <count>]`: rank methods in another loaded APK by similarity to a source method
 - `smali [apk] <method_id>`: print a method's smali code; omit `apk` when exactly one APK is loaded
