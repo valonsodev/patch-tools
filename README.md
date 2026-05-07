@@ -44,13 +44,13 @@ Commands:
 - `daemon stop`: stop the daemon
 - `daemon status`: show daemon status
 - `load <apk_path>`: load an APK, APKM, or XAPK
-- `unload <apk>`: unload a package by package name, package/version, or internal ID
+- `unload [apk]`: unload a package by package name, package/version, or internal ID; omit when exactly one APK is loaded
 - `run <script_path> [--install] [--device <serial>]`: run a `.kts` script and optionally install patched APKs with `adb`
 - `scaffold`: create a `main.kts` and `AGENTS.md` in the current directory
-- `fingerprint <apk> <method_id> [-n, --limit <count>]`: generate method fingerprints
-- `class-fingerprint <apk> <class_id> [-n, --limit <count>]`: generate class fingerprints
+- `fingerprint [apk] <method_id> [-n, --limit <count>]`: generate method fingerprints; omit `apk` when exactly one APK is loaded
+- `class-fingerprint [apk] <class_id> [-n, --limit <count>]`: generate class fingerprints; omit `apk` when exactly one APK is loaded
 - `search <query...> [-n, --limit <count>]`: fuzzy search methods across loaded APKs by name
-- `smali <apk> <method_id>`: print a method's smali code
+- `smali [apk] <method_id>`: print a method's smali code; omit `apk` when exactly one APK is loaded
 - `completion <shell>`: generate shell completions
 
 ---

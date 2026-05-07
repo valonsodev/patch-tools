@@ -2,6 +2,9 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 patch_tools := "patch-tools/target/release/patch-tools"
 
+default: all
+    {{ patch_tools }} -h
+
 all: jar rust
 
 jar:
@@ -16,6 +19,3 @@ clean:
 
 install: all
     cargo install --path patch-tools
-
-default: all
-    {{ patch_tools }}

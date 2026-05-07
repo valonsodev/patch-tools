@@ -32,11 +32,12 @@ Loads an Android package into the running daemon.
 
 - `apk_path`: filesystem path to the `.apk`, `.apkm`, or `.xapk` file to analyze or patch.
 
-### `patch-tools unload <apk>`
+### `patch-tools unload [apk]`
 
 Unloads one loaded package from the daemon.
 
-- `apk`: APK selector. This can be the package name, package/version label, or internal APK ID.
+- `apk`: optional APK selector. This can be the package name, package/version label, or internal APK ID.
+  Omit it only when exactly one APK is loaded.
 
 ### `patch-tools run <script_path>`
 
@@ -53,20 +54,20 @@ Creates scaffold files in the current directory:
 - `main.kts`
 - `AGENTS.md`
 
-### `patch-tools fingerprint <apk> <method_id>`
+### `patch-tools fingerprint [apk] <method_id>`
 
 Generates candidate fingerprints for one method.
 
-- `apk`: APK selector.
+- `apk`: optional APK selector. Omit it only when exactly one APK is loaded.
 - `method_id`: method selector. Usually the smali `unique_id`, but Java-signature form may also
   work in many flows.
 - `-n <limit>` or `--limit <limit>`: maximum number of generated fingerprints to return.
 
-### `patch-tools class-fingerprint <apk> <class_id>`
+### `patch-tools class-fingerprint [apk] <class_id>`
 
 Generates class-scoped fingerprint candidates.
 
-- `apk`: APK selector.
+- `apk`: optional APK selector. Omit it only when exactly one APK is loaded.
 - `class_id`: class selector. Usually a smali class type like `Lfoo/Bar;` or a fully qualified
   Java class name.
 - `-n <limit>` or `--limit <limit>`: maximum number of generated results to return.
@@ -78,11 +79,11 @@ Searches methods across loaded packages using fuzzy matching.
 - `query...`: one or more search terms. Multiple arguments are joined with spaces.
 - `-n <limit>` or `--limit <limit>`: maximum number of results to return per loaded package.
 
-### `patch-tools smali <apk> <method_id>`
+### `patch-tools smali [apk] <method_id>`
 
 Prints the smali body for one method.
 
-- `apk`: APK selector.
+- `apk`: optional APK selector. Omit it only when exactly one APK is loaded.
 - `method_id`: method selector.
 
 ## Rules
@@ -96,7 +97,7 @@ Prints the smali body for one method.
 7. Keep patches focused. If responsibilities differ, split them.
 8. If you return 2 or more patches, Morphe runs them as one combined patch item.
 9. If you are working toward one specific goal, return only the relevant fingerprint or patch while iterating so terminal output stays focused.
-10. Do not try to invent or hand-write fingerprints from scratch when you have a target method. Use `patch-tools fingerprint <apk> <method_id>` to generate candidates first, then adapt the generated result if needed.
+10. Do not try to invent or hand-write fingerprints from scratch when you have a target method. Use `patch-tools fingerprint [apk] <method_id>` to generate candidates first, then adapt the generated result if needed. You can omit `[apk]` when exactly one APK is loaded.
 
 ## Workflow
 
@@ -104,8 +105,8 @@ Prints the smali body for one method.
 2. `patch-tools load path/to/app.apk`
    Supported inputs are also `path/to/app.apkm` and `path/to/app.xapk`.
 3. `patch-tools search onCreate`
-4. `patch-tools smali <apk> <method-id>`
-5. `patch-tools fingerprint <apk> <method-id>`
+4. `patch-tools smali <method-id>` when one APK is loaded, or `patch-tools smali <apk> <method-id>` when multiple APKs are loaded.
+5. `patch-tools fingerprint <method-id>` when one APK is loaded, or `patch-tools fingerprint <apk> <method-id>` when multiple APKs are loaded.
 6. Convert good candidates into named `Fingerprint` declarations. Do not skip this command and guess the fingerprint yourself if you already have a target method.
 7. While fixing one patch or fingerprint, temporarily return only that item from `main.kts`.
 8. Start with `methodOrNull` while exploring.
@@ -779,4 +780,5 @@ correct register from the matched instructions or method shape. Small self-conta
 patches that use `v0` directly are acceptable when the injected code fully controls that register.
 
 Do not try to generate fingerprints by yourself when you already have a target method. Use
-`patch-tools fingerprint <apk> <method_id>` first, then adapt the generated fingerprint if needed.
+`patch-tools fingerprint [apk] <method_id>` first, then adapt the generated fingerprint if needed.
+You can omit `[apk]` when exactly one APK is loaded.

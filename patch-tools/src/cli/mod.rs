@@ -35,8 +35,8 @@ pub enum Commands {
     },
     /// Unload an APK
     Unload {
-        /// APK selector (package name, package/version, or internal ID)
-        apk: String,
+        /// APK selector (package name, package/version, or internal ID). Optional when one APK is loaded.
+        apk: Option<String>,
     },
     /// Execute a Kotlin script against loaded APKs
     Run {
@@ -52,21 +52,21 @@ pub enum Commands {
     /// Create main.kts and AGENTS.md in the current directory
     Scaffold,
     /// Generate fingerprints for a method
+    #[command(override_usage = "patch-tools fingerprint [OPTIONS] [APK] <METHOD_ID>")]
     Fingerprint {
-        /// APK selector (package name, package/version, or internal ID)
-        apk: String,
-        /// Method ID
-        method_id: String,
+        /// Method selector, or APK selector followed by method selector
+        #[arg(required = true, value_name = "APK_OR_METHOD_ID", num_args = 1..=2)]
+        args: Vec<String>,
         /// Maximum number of fingerprints to return after ranking
         #[arg(long, short = 'n', default_value_t = 8)]
         limit: u32,
     },
     /// Generate class fingerprints that can be used as `classFingerprint = ...`
+    #[command(override_usage = "patch-tools class-fingerprint [OPTIONS] [APK] <CLASS_ID>")]
     ClassFingerprint {
-        /// APK selector (package name, package/version, or internal ID)
-        apk: String,
-        /// Class ID (smali type like Lfoo/Bar; or fully qualified Java class name)
-        class_id: String,
+        /// Class selector, or APK selector followed by class selector
+        #[arg(required = true, value_name = "APK_OR_CLASS_ID", num_args = 1..=2)]
+        args: Vec<String>,
         /// Maximum number of fingerprints to return after ranking
         #[arg(long, short = 'n', default_value_t = 8)]
         limit: u32,
@@ -81,11 +81,11 @@ pub enum Commands {
         limit: u32,
     },
     /// Get smali source for a method
+    #[command(override_usage = "patch-tools smali [OPTIONS] [APK] <METHOD_ID>")]
     Smali {
-        /// APK selector (package name, package/version, or internal ID)
-        apk: String,
-        /// Method ID
-        method_id: String,
+        /// Method selector, or APK selector followed by method selector
+        #[arg(required = true, value_name = "APK_OR_METHOD_ID", num_args = 1..=2)]
+        args: Vec<String>,
     },
     /// Generate shell completion scripts
     #[command(visible_alias = "completions")]

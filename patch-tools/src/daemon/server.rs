@@ -687,13 +687,13 @@ fn build_apk_data(
 }
 
 fn resolve_apk_selector(state: &SharedState, raw: &str) -> std::result::Result<String, String> {
-    if state.apks.contains_key(raw) {
-        return Ok(raw.to_string());
-    }
-
     let normalized = raw.trim();
     if normalized.is_empty() {
-        return Err("APK selector cannot be empty".to_string());
+        return resolve_implicit_apk_selector(state);
+    }
+
+    if state.apks.contains_key(normalized) {
+        return Ok(normalized.to_string());
     }
 
     let mut exact_matches = Vec::new();
@@ -749,7 +749,30 @@ fn resolve_apk_selector(state: &SharedState, raw: &str) -> std::result::Result<S
     }
 }
 
+fn resolve_implicit_apk_selector(state: &SharedState) -> std::result::Result<String, String> {
+    match state.apks.len() {
+        0 => Err("APK selector omitted, but no APKs are loaded".to_string()),
+        1 => Ok(state
+            .apks
+            .keys()
+            .next()
+            .expect("one APK exists")
+            .to_string()),
+        _ => Err(format!(
+            "APK selector is required when multiple APKs are loaded. Available apks: {}",
+            available_apk_labels(state)
+        )),
+    }
+}
+
 fn format_apk_not_found_error(state: &SharedState, raw: &str) -> String {
+    format!(
+        "APK not found: {raw}. Available apks: {}",
+        available_apk_labels(state)
+    )
+}
+
+fn available_apk_labels(state: &SharedState) -> String {
     let mut labels = state
         .apks
         .values()
@@ -757,13 +780,11 @@ fn format_apk_not_found_error(state: &SharedState, raw: &str) -> String {
         .collect::<Vec<_>>();
     labels.sort();
 
-    let available_apks = if labels.is_empty() {
+    if labels.is_empty() {
         "none loaded".to_string()
     } else {
         labels.join(", ")
-    };
-
-    format!("APK not found: {raw}. Available apks: {available_apks}")
+    }
 }
 
 fn apk_display_name(identity: &ApkIdentity) -> String {

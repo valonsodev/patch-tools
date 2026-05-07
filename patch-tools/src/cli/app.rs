@@ -2,7 +2,7 @@ use super::{Cli, Commands, DaemonAction, OutputFormat};
 use crate::daemon::{client::DaemonClient, runtime};
 use crate::install as run_install;
 use crate::output;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::CommandFactory;
 use clap_complete::generate;
 use std::{
@@ -27,20 +27,19 @@ pub async fn run(cli: Cli) -> Result<()> {
             device,
         } => handle_run(&sock, script_path, should_install, device, format.clone()).await?,
         Commands::Scaffold => runtime::scaffold_scripts()?,
-        Commands::Fingerprint {
-            apk,
-            method_id,
-            limit,
-        } => handle_fingerprint(&sock, apk, method_id, limit, format.clone()).await?,
-        Commands::ClassFingerprint {
-            apk,
-            class_id,
-            limit,
-        } => handle_class_fingerprint(&sock, apk, class_id, limit, format.clone()).await?,
+        Commands::Fingerprint { args, limit } => {
+            let (apk, method_id) = split_optional_apk_selector(args, "method_id")?;
+            handle_fingerprint(&sock, apk, method_id, limit, format.clone()).await?;
+        }
+        Commands::ClassFingerprint { args, limit } => {
+            let (apk, class_id) = split_optional_apk_selector(args, "class_id")?;
+            handle_class_fingerprint(&sock, apk, class_id, limit, format.clone()).await?;
+        }
         Commands::Search { query, limit } => {
             handle_search(&sock, query, limit, format.clone()).await?;
         }
-        Commands::Smali { apk, method_id } => {
+        Commands::Smali { args } => {
+            let (apk, method_id) = split_optional_apk_selector(args, "method_id")?;
             handle_smali(&sock, apk, method_id, format.clone()).await?;
         }
         Commands::Completion { shell } => render_completion(shell),
@@ -88,9 +87,10 @@ async fn handle_load(sock: &Path, apk_path: PathBuf, format: OutputFormat) -> Re
     .await
 }
 
-async fn handle_unload(sock: &Path, apk: String, format: OutputFormat) -> Result<()> {
+async fn handle_unload(sock: &Path, apk: Option<String>, format: OutputFormat) -> Result<()> {
     with_client(sock, |client| {
         Box::pin(async move {
+            let apk = apk.unwrap_or_default();
             let resp = client.unload_apk(&apk).await?;
             output::print_response_checked(&resp, &format)?;
             Ok(())
@@ -135,13 +135,14 @@ async fn handle_run(
 
 async fn handle_fingerprint(
     sock: &Path,
-    apk: String,
+    apk: Option<String>,
     method_id: String,
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
     with_client(sock, |client| {
         Box::pin(async move {
+            let apk = apk.unwrap_or_default();
             let resp = client
                 .generate_fingerprint(&apk, &method_id, Some(limit))
                 .await?;
@@ -154,13 +155,14 @@ async fn handle_fingerprint(
 
 async fn handle_class_fingerprint(
     sock: &Path,
-    apk: String,
+    apk: Option<String>,
     class_id: String,
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
     with_client(sock, |client| {
         Box::pin(async move {
+            let apk = apk.unwrap_or_default();
             let resp = client
                 .generate_class_fingerprint(&apk, &class_id, Some(limit))
                 .await?;
@@ -190,12 +192,13 @@ async fn handle_search(
 
 async fn handle_smali(
     sock: &Path,
-    apk: String,
+    apk: Option<String>,
     method_id: String,
     format: OutputFormat,
 ) -> Result<()> {
     with_client(sock, |client| {
         Box::pin(async move {
+            let apk = apk.unwrap_or_default();
             let resp = client.get_method_smali(&apk, &method_id).await?;
             output::print_response_checked(&resp, &format)?;
             Ok(())
@@ -208,6 +211,25 @@ fn render_completion(shell: clap_complete::Shell) {
     let mut command = Cli::command();
     let binary_name = command.get_name().to_string();
     generate(shell, &mut command, binary_name, &mut io::stdout());
+}
+
+fn split_optional_apk_selector(
+    args: Vec<String>,
+    value_name: &str,
+) -> Result<(Option<String>, String)> {
+    let mut args = args.into_iter();
+    let first = args
+        .next()
+        .with_context(|| format!("{value_name} argument missing"))?;
+    let Some(second) = args.next() else {
+        return Ok((None, first));
+    };
+
+    if let Some(extra) = args.next() {
+        bail!("unexpected extra argument: {extra}");
+    }
+
+    Ok((Some(first), second))
 }
 
 type ClientFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + 'a>>;
