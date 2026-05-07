@@ -31,10 +31,6 @@
       {
         "assets": [
           {
-            "path": "engine/build/libs/engine-all.jar",
-            "label": "engine-all.jar"
-          },
-          {
             "path": "patch-tools/target/release/patch-tools",
             "label": "patch-tools-linux-x86_64"
           }
