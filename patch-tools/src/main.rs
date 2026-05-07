@@ -1,3 +1,4 @@
+mod access_flags;
 mod cli;
 mod daemon;
 mod diff;

@@ -80,6 +80,18 @@ pub enum Commands {
         #[arg(long, short = 'n', default_value_t = 8)]
         limit: u32,
     },
+    /// Map a method from one loaded APK to similar methods in another loaded APK
+    Map {
+        /// Source APK selector (package name, package/version, or internal ID)
+        old_apk: String,
+        /// Source method selector
+        method_id: String,
+        /// Target APK selector (package name, package/version, or internal ID)
+        new_apk: String,
+        /// Maximum number of similar methods to return
+        #[arg(long, short = 'n', default_value_t = 8)]
+        limit: u32,
+    },
     /// Get smali source for a method
     #[command(override_usage = "patch-tools smali [OPTIONS] [APK] <METHOD_ID>")]
     Smali {

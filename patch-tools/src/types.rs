@@ -82,6 +82,22 @@ impl DaemonRequest {
         }
     }
 
+    pub fn map_method(
+        old_apk_selector: impl Into<String>,
+        method_id: impl Into<String>,
+        new_apk_selector: impl Into<String>,
+        limit: Option<u32>,
+    ) -> Self {
+        Self {
+            kind: Some(daemon_request::Kind::MapMethod(MapMethodRequest {
+                old_apk_id: old_apk_selector.into(),
+                method_id: method_id.into(),
+                new_apk_id: new_apk_selector.into(),
+                limit,
+            })),
+        }
+    }
+
     pub fn get_method_smali(apk_selector: impl Into<String>, method_id: impl Into<String>) -> Self {
         Self {
             kind: Some(daemon_request::Kind::GetMethodSmali(

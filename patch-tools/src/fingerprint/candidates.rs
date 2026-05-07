@@ -1,3 +1,4 @@
+use crate::access_flags::DexAccessFlag;
 use crate::types::{InstructionFeature, MethodFingerprintDto, MethodSignatureDto, ParameterList};
 
 use super::index::FingerprintIndex;
@@ -27,7 +28,7 @@ impl SignatureCombo {
 
     pub(crate) fn effective_return_type(&self) -> Option<String> {
         if let (Some(flags), Some(return_type)) = (self.access_flags, &self.return_type)
-            && flags & 0x10000 != 0
+            && DexAccessFlag::Constructor.is_set(flags)
             && return_type == "V"
         {
             return None;

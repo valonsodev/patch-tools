@@ -79,6 +79,15 @@ Searches methods across loaded packages using fuzzy matching.
 - `query...`: one or more search terms. Multiple arguments are joined with spaces.
 - `-n <limit>` or `--limit <limit>`: maximum number of results to return per loaded package.
 
+### `patch-tools map <old_apk> <method_id> <new_apk>`
+
+Ranks methods in another loaded package by similarity to a source method.
+
+- `old_apk`: source APK selector.
+- `method_id`: source method selector.
+- `new_apk`: target APK selector.
+- `-n <limit>` or `--limit <limit>`: maximum number of similar methods to return.
+
 ### `patch-tools smali [apk] <method_id>`
 
 Prints the smali body for one method.

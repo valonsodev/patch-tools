@@ -59,6 +59,7 @@ pub(super) fn render_with(response: &DaemonResponse, fmt: &dyn Formatter) -> Ren
             stdout_only(render_class_fingerprints(payload, fmt))
         }
         daemon_response::Kind::SearchResult(payload) => render_search_result(payload, fmt),
+        daemon_response::Kind::MethodMap(payload) => render_method_map(payload, fmt),
         daemon_response::Kind::MethodSmali(payload) => render_method_smali(payload, fmt),
         daemon_response::Kind::Ok(_) => stdout_only(fmt.success("OK")),
         daemon_response::Kind::Error(payload) => stderr_only(fmt.error(&payload.message)),
@@ -235,6 +236,94 @@ fn render_search_result(
     }
 
     output
+}
+
+fn render_method_map(
+    payload: &crate::types::MethodMapResponse,
+    fmt: &dyn Formatter,
+) -> RenderOutput {
+    let mut output = RenderOutput::default();
+    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let source_apk = payload
+        .source_apk
+        .as_ref()
+        .expect("validated method map response missing source apk");
+    let target_apk = payload
+        .target_apk
+        .as_ref()
+        .expect("validated method map response missing target apk");
+    let source_method = payload
+        .source_method
+        .as_ref()
+        .expect("validated method map response missing source method");
+
+    if is_md {
+        output.push_stdout(fmt.heading(2, "Method map"));
+        output.push_stdout(fmt.bullet(&format!(
+            "{}: {}",
+            fmt.bold("Source APK"),
+            fmt.code(&apk_identity_label(source_apk))
+        )));
+        output.push_stdout(fmt.bullet(&format!(
+            "{}: {}",
+            fmt.bold("Source method"),
+            fmt.smali_method_id(source_method)
+        )));
+        output.push_stdout(fmt.bullet(&format!(
+            "{}: {}\n",
+            fmt.bold("Target APK"),
+            fmt.code(&apk_identity_label(target_apk))
+        )));
+        output.push_stdout(format!(
+            "Found {} similar method(s), ranked from most to least similar.\n\n",
+            payload.candidates.len()
+        ));
+        output.push_stdout("| # | Similarity | Method |\n|--:|-----------:|--------|\n");
+        for (index, candidate) in payload.candidates.iter().enumerate() {
+            if let Some(method) = candidate.method.as_ref() {
+                output.push_stdout(format!(
+                    "| {} | {:.1}% | {} |\n",
+                    index + 1,
+                    candidate.similarity,
+                    fmt.smali_method_id(method)
+                ));
+            }
+        }
+        output.push_stdout("\n");
+    } else {
+        output.push_stdout(format!("{}\n", style::bold("Method map")));
+        output.push_stdout(format!(
+            "  {} {}\n",
+            style::dimmed("source apk:"),
+            apk_identity_label(source_apk)
+        ));
+        output.push_stdout(format!(
+            "  {} {}\n",
+            style::dimmed("source method:"),
+            fmt.smali_method_id(source_method)
+        ));
+        output.push_stdout(format!(
+            "  {} {}\n\n",
+            style::dimmed("target apk:"),
+            apk_identity_label(target_apk)
+        ));
+        for (index, candidate) in payload.candidates.iter().enumerate() {
+            if let Some(method) = candidate.method.as_ref() {
+                output.push_stdout(format!(
+                    "  {:>3}. [{:>6.1}%] {}\n",
+                    index + 1,
+                    candidate.similarity,
+                    fmt.smali_method_id(method)
+                ));
+            }
+        }
+    }
+
+    output
+}
+
+fn apk_identity_label(identity: &crate::types::ApkIdentity) -> String {
+    format!("{} / {}", identity.package_name, identity.package_version)
 }
 
 fn render_method_smali(

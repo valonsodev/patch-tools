@@ -1,27 +1,7 @@
 use std::fmt::Write as _;
 
+use crate::access_flags::DexAccessFlag;
 use crate::types::{InstructionFeature, MethodFingerprintDto, instruction_feature};
-
-/// Dex access flag constants matching dexlib2's `AccessFlags` enum.
-const ACCESS_FLAG_NAMES: &[(i32, &str)] = &[
-    (0x0001, "PUBLIC"),
-    (0x0002, "PRIVATE"),
-    (0x0004, "PROTECTED"),
-    (0x0008, "STATIC"),
-    (0x0010, "FINAL"),
-    (0x0020, "SYNCHRONIZED"),
-    (0x0040, "BRIDGE"),
-    (0x0080, "VARARGS"),
-    (0x0100, "NATIVE"),
-    (0x0200, "INTERFACE"),
-    (0x0400, "ABSTRACT"),
-    (0x0800, "STRICTFP"),
-    (0x1000, "SYNTHETIC"),
-    (0x2000, "ANNOTATION"),
-    (0x4000, "ENUM"),
-    (0x10000, "CONSTRUCTOR"),
-    (0x20000, "DECLARED_SYNCHRONIZED"),
-];
 
 /// Render a `MethodFingerprintDto` as a Morphe Fingerprint(...) Kotlin constructor call.
 pub fn to_morphe_code_string(fp: &MethodFingerprintDto) -> String {
@@ -104,7 +84,9 @@ fn fingerprint_parts(fp: &MethodFingerprintDto) -> Vec<String> {
     let mut parts: Vec<String> = Vec::new();
 
     // Return type — omit for constructors (Morphe normalizes V away)
-    let is_constructor = fp.access_flags.is_some_and(|f| f & 0x10000 != 0);
+    let is_constructor = fp
+        .access_flags
+        .is_some_and(|flags| DexAccessFlag::Constructor.is_set(flags));
     if let Some(ref rt) = fp.return_type
         && !(is_constructor && rt == "V")
     {
@@ -113,10 +95,10 @@ fn fingerprint_parts(fp: &MethodFingerprintDto) -> Vec<String> {
 
     // Access flags
     if let Some(flags) = fp.access_flags {
-        let flag_strs: Vec<String> = ACCESS_FLAG_NAMES
+        let flag_strs: Vec<String> = DexAccessFlag::ALL
             .iter()
-            .filter(|(mask, _)| flags & mask != 0)
-            .map(|(_, name)| format!("AccessFlags.{name}"))
+            .filter(|flag| flag.is_set(flags))
+            .map(|flag| format!("AccessFlags.{}", flag.dexlib_name()))
             .collect();
         if !flag_strs.is_empty() {
             parts.push(format!("accessFlags = listOf({})", flag_strs.join(", ")));

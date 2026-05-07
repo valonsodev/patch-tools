@@ -1,6 +1,7 @@
 mod candidates;
 mod generate;
 mod index;
+mod map;
 mod stability;
 mod tokens;
 mod uniqueness;
@@ -12,4 +13,5 @@ pub use generate::{
     generate_class_scoped,
 };
 pub use index::{FingerprintIndex, build_index};
+pub use map::map_methods;
 pub use stability::inspect_stability;

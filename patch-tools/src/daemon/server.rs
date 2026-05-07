@@ -6,8 +6,8 @@ use crate::types::{
     ApkIdentity, ApkLoadedResponse, ApkStatus, ApkUnloadedResponse, ClassFingerprintCandidateDto,
     ClassFingerprintResultResponse, DaemonRequest, DaemonResponse, ExecutionResultResponse,
     FingerprintResultResponse, MatchedMethodDto, MethodData, MethodFingerprintDto, MethodInfoDto,
-    MethodInfoList, MethodSmaliResponse, SearchResultResponse, StatusInfoResponse, daemon_request,
-    daemon_response,
+    MethodInfoList, MethodMapCandidateDto, MethodMapResponse, MethodSmaliResponse,
+    SearchResultResponse, StatusInfoResponse, daemon_request, daemon_response,
 };
 use anyhow::{Context, Result};
 use nucleo_matcher::Utf32String;
@@ -312,6 +312,7 @@ async fn dispatch(
         daemon_request::Kind::SearchMethods(search_methods) => {
             handle_search_methods(state, search_methods).await
         }
+        daemon_request::Kind::MapMethod(map_method) => handle_map_method(state, map_method).await,
         daemon_request::Kind::GetMethodSmali(get_method_smali) => {
             handle_get_method_smali(state, engine_tx, get_method_smali).await
         }
@@ -605,6 +606,120 @@ fn search_methods_response(apks: &[Arc<ApkData>], query: &str, limit: usize) -> 
     DaemonResponse {
         kind: Some(daemon_response::Kind::SearchResult(SearchResultResponse {
             results,
+        })),
+    }
+}
+
+async fn handle_map_method(
+    state: &Arc<RwLock<SharedState>>,
+    map_method: crate::types::MapMethodRequest,
+) -> DaemonResponse {
+    let limit = map_method.limit.unwrap_or(8) as usize;
+    let (source_apk, target_apk) = {
+        let state = state.read().await;
+        if state.apks.len() < 2 {
+            return DaemonResponse::error(format!(
+                "map requires at least 2 loaded APKs. Currently loaded: {}",
+                state.apks.len()
+            ));
+        }
+
+        let source_apk_id = match resolve_apk_selector(&state, &map_method.old_apk_id) {
+            Ok(apk_id) => apk_id,
+            Err(error) => return DaemonResponse::error(error),
+        };
+        let target_apk_id = match resolve_apk_selector(&state, &map_method.new_apk_id) {
+            Ok(apk_id) => apk_id,
+            Err(error) => return DaemonResponse::error(error),
+        };
+
+        if source_apk_id == target_apk_id {
+            return DaemonResponse::error(
+                "map requires two different APKs; source and target resolved to the same APK",
+            );
+        }
+
+        let Some(source_apk) = state.apks.get(&source_apk_id).cloned() else {
+            return DaemonResponse::error(format_apk_not_found_error(
+                &state,
+                &map_method.old_apk_id,
+            ));
+        };
+        let Some(target_apk) = state.apks.get(&target_apk_id).cloned() else {
+            return DaemonResponse::error(format_apk_not_found_error(
+                &state,
+                &map_method.new_apk_id,
+            ));
+        };
+
+        (source_apk, target_apk)
+    };
+
+    let source_method_id = match resolve_method_id(&source_apk, &map_method.method_id) {
+        Some(unique_id) => unique_id,
+        None => {
+            return DaemonResponse::error(format!("Method not found: {}", map_method.method_id));
+        }
+    };
+
+    match tokio::task::spawn_blocking(move || {
+        map_method_response(&source_apk, &source_method_id, &target_apk, limit)
+    })
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => blocking_task_error("method map", &error),
+    }
+}
+
+fn map_method_response(
+    source_apk: &Arc<ApkData>,
+    source_method_id: &str,
+    target_apk: &Arc<ApkData>,
+    limit: usize,
+) -> DaemonResponse {
+    let Some(source_method) = source_apk
+        .method_infos
+        .iter()
+        .find(|method| method.unique_id == source_method_id)
+        .cloned()
+    else {
+        return DaemonResponse::error(format!("Method not found: {source_method_id}"));
+    };
+
+    let candidates = match crate::fingerprint::map_methods(
+        &source_apk.fingerprint_index,
+        source_method_id,
+        &target_apk.fingerprint_index,
+        limit,
+    ) {
+        Ok(candidates) => candidates,
+        Err(error) => return DaemonResponse::error(format!("{error:#}")),
+    };
+
+    let method_infos_by_id = target_apk
+        .method_infos
+        .iter()
+        .map(|method| (method.unique_id.as_str(), method))
+        .collect::<HashMap<_, _>>();
+    let candidates = candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            method_infos_by_id
+                .get(candidate.method_id.as_str())
+                .map(|method| MethodMapCandidateDto {
+                    method: Some((*method).clone()),
+                    similarity: candidate.similarity,
+                })
+        })
+        .collect();
+
+    DaemonResponse {
+        kind: Some(daemon_response::Kind::MethodMap(MethodMapResponse {
+            source_apk: Some(source_apk.identity.clone()),
+            target_apk: Some(target_apk.identity.clone()),
+            source_method: Some(source_method),
+            candidates,
         })),
     }
 }

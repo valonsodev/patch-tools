@@ -38,6 +38,14 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::Search { query, limit } => {
             handle_search(&sock, query, limit, format.clone()).await?;
         }
+        Commands::Map {
+            old_apk,
+            method_id,
+            new_apk,
+            limit,
+        } => {
+            handle_map(&sock, old_apk, method_id, new_apk, limit, format.clone()).await?;
+        }
         Commands::Smali { args } => {
             let (apk, method_id) = split_optional_apk_selector(args, "method_id")?;
             handle_smali(&sock, apk, method_id, format.clone()).await?;
@@ -183,6 +191,26 @@ async fn handle_search(
         Box::pin(async move {
             let query = query.join(" ");
             let resp = client.search_methods(&query, Some(limit)).await?;
+            output::print_response_checked(&resp, &format)?;
+            Ok(())
+        })
+    })
+    .await
+}
+
+async fn handle_map(
+    sock: &Path,
+    old_apk: String,
+    method_id: String,
+    new_apk: String,
+    limit: u32,
+    format: OutputFormat,
+) -> Result<()> {
+    with_client(sock, |client| {
+        Box::pin(async move {
+            let resp = client
+                .map_method(&old_apk, &method_id, &new_apk, Some(limit))
+                .await?;
             output::print_response_checked(&resp, &format)?;
             Ok(())
         })

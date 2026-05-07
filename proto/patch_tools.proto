@@ -284,6 +284,13 @@ message GetMethodSmaliRequest {
   string method_id = 2;
 }
 
+message MapMethodRequest {
+  string old_apk_id = 1;
+  string method_id = 2;
+  string new_apk_id = 3;
+  optional uint32 limit = 4;
+}
+
 message InspectMethodRequest {
   string apk_id = 1;
   string method_id = 2;
@@ -305,6 +312,7 @@ message DaemonRequest {
     StopRequest stop = 8;
     InspectMethodRequest inspect_method = 9;
     GenerateClassFingerprintRequest generate_class_fingerprint = 10;
+    MapMethodRequest map_method = 11;
   }
 }
 
@@ -338,6 +346,18 @@ message MethodInfoList {
 
 message SearchResultResponse {
   map<string, MethodInfoList> results = 1;
+}
+
+message MethodMapCandidateDto {
+  MethodInfoDto method = 1;
+  double similarity = 2;
+}
+
+message MethodMapResponse {
+  ApkIdentity source_apk = 1;
+  ApkIdentity target_apk = 2;
+  MethodInfoDto source_method = 3;
+  repeated MethodMapCandidateDto candidates = 4;
 }
 
 message MethodSmaliResponse {
@@ -382,5 +402,6 @@ message DaemonResponse {
     ErrorResponse error = 9;
     InspectMethodResponse inspect_method = 10;
     ClassFingerprintResultResponse class_fingerprint_result = 11;
+    MethodMapResponse method_map = 12;
   }
 }
