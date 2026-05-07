@@ -32,6 +32,34 @@ patch-tools load path/to/app.apk
 patch-tools run main.kts
 ```
 
+## How The Engine Works
+
+When you run `patch-tools run main.kts`, the engine evaluates the Kotlin script and uses the
+script's final value as the list of things to process. In a `.kts` script, that final value is the
+last expression in the file. For example, ending the file with `MyFingerprint` returns one
+fingerprint item, while ending it with `listOf(MyFingerprint, myPatch)` returns two items.
+
+The returned value is classified like this:
+
+- `null` or `Unit`: nothing to process.
+- A single value: one script item.
+- A `List`: each non-null element becomes its own script item.
+- `BytecodePatch`, `ResourcePatch`, and `RawResourcePatch`: patch items.
+- `Fingerprint`: a fingerprint search item.
+- Anything else: a generic result rendered with `toString()`.
+
+All patch items are run together against each loaded APK in one Morphe patcher session. This matters
+because multiple patches can share fingerprints, state, and modified bytecode while producing one
+combined bytecode/resource diff. Non-patch items are processed individually: fingerprints call
+Morphe's fingerprint matcher and generic values are reported directly.
+
+The engine intentionally re-evaluates the script while processing each patch group or item. That
+gives Morphe fresh fingerprint and patch instances for the actual run, and keeps script output
+associated with the item/APK that produced it. The script template also default-imports
+`dev.valonso.tools.engine.scripting.print` and `println`; those functions shadow normal console
+printing and write into an engine `ScriptOutput` stream. `print` buffers text, `println` flushes a
+line, and any trailing buffered text is flushed when that evaluation block finishes.
+
 ## Available Commands
 
 Global option:
