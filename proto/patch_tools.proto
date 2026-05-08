@@ -253,7 +253,7 @@ message LoadApkRequest {
 }
 
 message UnloadApkRequest {
-  string apk_id = 1;
+  optional string apk_id = 1;
 }
 
 message ExecuteRequest {
@@ -263,13 +263,13 @@ message ExecuteRequest {
 }
 
 message GenerateFingerprintRequest {
-  string apk_id = 1;
+  optional string apk_id = 1;
   string method_id = 2;
   optional uint32 limit = 3;
 }
 
 message GenerateClassFingerprintRequest {
-  string apk_id = 1;
+  optional string apk_id = 1;
   string class_id = 2;
   optional uint32 limit = 3;
 }
@@ -290,7 +290,7 @@ message SearchMethodsRequest {
 }
 
 message GetMethodSmaliRequest {
-  string apk_id = 1;
+  optional string apk_id = 1;
   string method_id = 2;
 }
 
@@ -301,16 +301,12 @@ message MapMethodRequest {
   optional uint32 limit = 4;
 }
 
-message InspectMethodRequest {
-  string apk_id = 1;
-  string method_id = 2;
-}
-
 message StatusRequest {}
 
 message StopRequest {}
 
 message DaemonRequest {
+  reserved 9;
   oneof kind {
     LoadApkRequest load_apk = 1;
     UnloadApkRequest unload_apk = 2;
@@ -320,7 +316,6 @@ message DaemonRequest {
     GetMethodSmaliRequest get_method_smali = 6;
     StatusRequest status = 7;
     StopRequest stop = 8;
-    InspectMethodRequest inspect_method = 9;
     GenerateClassFingerprintRequest generate_class_fingerprint = 10;
     MapMethodRequest map_method = 11;
     GenerateCommonFingerprintRequest generate_common_fingerprint = 12;
@@ -391,19 +386,6 @@ message StatusInfoResponse {
   uint32 daemon_pid = 3;
 }
 
-message ScoredInstruction {
-  InstructionFeature instruction = 1;
-  int32 stability_score = 2;
-  string label = 3;
-}
-
-message InspectMethodResponse {
-  string method_id = 1;
-  MethodSignatureDto signature = 2;
-  repeated ScoredInstruction scored_instructions = 3;
-  int32 total_stability_score = 4;
-}
-
 message OkResponse {}
 
 message ErrorResponse {
@@ -411,6 +393,7 @@ message ErrorResponse {
 }
 
 message DaemonResponse {
+  reserved 10;
   oneof kind {
     ApkLoadedResponse apk_loaded = 1;
     ApkUnloadedResponse apk_unloaded = 2;
@@ -421,7 +404,6 @@ message DaemonResponse {
     StatusInfoResponse status_info = 7;
     OkResponse ok = 8;
     ErrorResponse error = 9;
-    InspectMethodResponse inspect_method = 10;
     ClassFingerprintResultResponse class_fingerprint_result = 11;
     MethodMapResponse method_map = 12;
     CommonFingerprintResultResponse common_fingerprint_result = 13;

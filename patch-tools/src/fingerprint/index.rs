@@ -47,13 +47,16 @@ pub fn build_index(methods: Vec<MethodData>) -> FingerprintIndex {
     let mut indexed_methods = Vec::with_capacity(methods.len());
 
     for (index, method) in methods.into_iter().enumerate() {
-        let info = method.info.expect("validated method data missing info");
+        // The proto fields are guaranteed populated by `engine_jni::validate_method_data`.
+        let info = method
+            .info
+            .expect("validated method data missing info (must be checked at the JNI boundary)");
         let features = method
             .features
-            .expect("validated method data missing features");
-        let signature = features
-            .signature
-            .expect("validated method features missing signature");
+            .expect("validated method data missing features (must be checked at the JNI boundary)");
+        let signature = features.signature.expect(
+            "validated method features missing signature (must be checked at the JNI boundary)",
+        );
         let method_id = info.unique_id.clone();
         let class_type = info.defining_class.clone();
         let index_u32 = u32::try_from(index).expect("method index exceeds u32 range");

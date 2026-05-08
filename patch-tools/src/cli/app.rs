@@ -7,10 +7,8 @@ use anyhow::{Context, Result, bail};
 use clap::CommandFactory;
 use clap_complete::generate;
 use std::{
-    future::Future,
     io,
     path::{Path, PathBuf},
-    pin::Pin,
 };
 
 pub async fn run(cli: Cli) -> Result<()> {
@@ -19,29 +17,29 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Commands::InternalDaemon => runtime::run(&sock).await?,
-        Commands::Daemon { action } => handle_daemon_action(&sock, action, format.clone()).await?,
-        Commands::Load { apk_path } => handle_load(&sock, apk_path, format.clone()).await?,
-        Commands::Unload { apk } => handle_unload(&sock, apk, format.clone()).await?,
+        Commands::Daemon { action } => handle_daemon_action(&sock, action, format).await?,
+        Commands::Load { apk_path } => handle_load(&sock, apk_path, format).await?,
+        Commands::Unload { apk } => handle_unload(&sock, apk, format).await?,
         Commands::Run {
             script_path,
             install: should_install,
             device,
-        } => handle_run(&sock, script_path, should_install, device, format.clone()).await?,
+        } => handle_run(&sock, script_path, should_install, device, format).await?,
         Commands::Scaffold => runtime::scaffold_scripts()?,
         Commands::Fingerprint { args, limit } => {
             let (apk, method_id) = split_optional_apk_selector(args, "method_id")?;
-            handle_fingerprint(&sock, apk, method_id, limit, format.clone()).await?;
+            handle_fingerprint(&sock, apk, method_id, limit, format).await?;
         }
         Commands::ClassFingerprint { args, limit } => {
             let (apk, class_id) = split_optional_apk_selector(args, "class_id")?;
-            handle_class_fingerprint(&sock, apk, class_id, limit, format.clone()).await?;
+            handle_class_fingerprint(&sock, apk, class_id, limit, format).await?;
         }
         Commands::CommonFingerprint { args, limit } => {
-            let targets = split_common_fingerprint_targets(args)?;
-            handle_common_fingerprint(&sock, targets, limit, format.clone()).await?;
+            let targets = split_common_fingerprint_targets(&args)?;
+            handle_common_fingerprint(&sock, targets, limit, format).await?;
         }
         Commands::Search { query, limit } => {
-            handle_search(&sock, query, limit, format.clone()).await?;
+            handle_search(&sock, query, limit, format).await?;
         }
         Commands::Map {
             old_apk,
@@ -49,11 +47,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             new_apk,
             limit,
         } => {
-            handle_map(&sock, old_apk, method_id, new_apk, limit, format.clone()).await?;
+            handle_map(&sock, old_apk, method_id, new_apk, limit, format).await?;
         }
         Commands::Smali { args } => {
             let (apk, method_id) = split_optional_apk_selector(args, "method_id")?;
-            handle_smali(&sock, apk, method_id, format.clone()).await?;
+            handle_smali(&sock, apk, method_id, format).await?;
         }
         Commands::Completion { shell } => render_completion(shell),
     }
@@ -74,14 +72,10 @@ async fn handle_daemon_action(
             Ok(())
         }
         DaemonAction::Status => {
-            with_client(sock, |client| {
-                Box::pin(async move {
-                    let resp = client.status().await?;
-                    output::print_response_checked(&resp, &format)?;
-                    Ok(())
-                })
-            })
-            .await
+            let mut client = connect_daemon(sock).await?;
+            let resp = client.status().await?;
+            output::print_response_checked(&resp, format)?;
+            Ok(())
         }
     }
 }
@@ -90,26 +84,17 @@ async fn handle_load(sock: &Path, apk_path: PathBuf, format: OutputFormat) -> Re
     let path = apk_path
         .canonicalize()
         .context("Android package file not found")?;
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let resp = client.load_apk(path.to_string_lossy().as_ref()).await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client.load_apk(path.to_string_lossy().as_ref()).await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_unload(sock: &Path, apk: Option<String>, format: OutputFormat) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let apk = apk.unwrap_or_default();
-            let resp = client.unload_apk(&apk).await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client.unload_apk(apk).await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_run(
@@ -131,19 +116,15 @@ async fn handle_run(
         None
     };
 
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let resp = client
-                .execute(path.to_string_lossy().as_ref(), None, should_install)
-                .await?;
-            output::print_response_checked(&resp, &format)?;
-            if let Some(resolved_device) = install_device.as_deref() {
-                run_install::run_post_execute_install(&format, resolved_device, &resp)?;
-            }
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client
+        .execute(path.to_string_lossy().as_ref(), None, should_install)
+        .await?;
+    output::print_response_checked(&resp, format)?;
+    if let Some(resolved_device) = install_device.as_deref() {
+        run_install::run_post_execute_install(format, resolved_device, &resp)?;
+    }
+    Ok(())
 }
 
 async fn handle_fingerprint(
@@ -153,17 +134,12 @@ async fn handle_fingerprint(
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let apk = apk.unwrap_or_default();
-            let resp = client
-                .generate_fingerprint(&apk, &method_id, Some(limit))
-                .await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client
+        .generate_fingerprint(apk, &method_id, Some(limit))
+        .await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_class_fingerprint(
@@ -173,17 +149,12 @@ async fn handle_class_fingerprint(
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let apk = apk.unwrap_or_default();
-            let resp = client
-                .generate_class_fingerprint(&apk, &class_id, Some(limit))
-                .await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client
+        .generate_class_fingerprint(apk, &class_id, Some(limit))
+        .await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_common_fingerprint(
@@ -192,16 +163,12 @@ async fn handle_common_fingerprint(
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let resp = client
-                .generate_common_fingerprint(targets, Some(limit))
-                .await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client
+        .generate_common_fingerprint(targets, Some(limit))
+        .await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_search(
@@ -210,15 +177,11 @@ async fn handle_search(
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let query = query.join(" ");
-            let resp = client.search_methods(&query, Some(limit)).await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let query = query.join(" ");
+    let resp = client.search_methods(&query, Some(limit)).await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_map(
@@ -229,16 +192,12 @@ async fn handle_map(
     limit: u32,
     format: OutputFormat,
 ) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let resp = client
-                .map_method(&old_apk, &method_id, &new_apk, Some(limit))
-                .await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client
+        .map_method(&old_apk, &method_id, &new_apk, Some(limit))
+        .await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 async fn handle_smali(
@@ -247,15 +206,10 @@ async fn handle_smali(
     method_id: String,
     format: OutputFormat,
 ) -> Result<()> {
-    with_client(sock, |client| {
-        Box::pin(async move {
-            let apk = apk.unwrap_or_default();
-            let resp = client.get_method_smali(&apk, &method_id).await?;
-            output::print_response_checked(&resp, &format)?;
-            Ok(())
-        })
-    })
-    .await
+    let mut client = connect_daemon(sock).await?;
+    let resp = client.get_method_smali(apk, &method_id).await?;
+    output::print_response_checked(&resp, format)?;
+    Ok(())
 }
 
 fn render_completion(shell: clap_complete::Shell) {
@@ -284,9 +238,9 @@ fn split_optional_apk_selector(
 }
 
 fn split_common_fingerprint_targets(
-    args: Vec<String>,
+    args: &[String],
 ) -> Result<Vec<CommonFingerprintTargetSelector>> {
-    if args.len() < 4 || args.len() % 2 != 0 {
+    if args.len() < 4 || !args.len().is_multiple_of(2) {
         bail!(
             "common-fingerprint expects at least 2 APK/method pairs: <APK> <METHOD_ID> <APK> <METHOD_ID>..."
         );
@@ -299,16 +253,6 @@ fn split_common_fingerprint_targets(
             method_id: pair[1].clone(),
         })
         .collect())
-}
-
-type ClientFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + 'a>>;
-
-async fn with_client<F>(sock: &Path, handler: F) -> Result<()>
-where
-    F: for<'a> FnOnce(&'a mut DaemonClient) -> ClientFuture<'a>,
-{
-    let mut client = connect_daemon(sock).await?;
-    handler(&mut client).await
 }
 
 async fn connect_daemon(sock: &Path) -> Result<DaemonClient> {

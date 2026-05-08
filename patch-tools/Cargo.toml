@@ -6,8 +6,15 @@ license = "GPL-3.0-only"
 
 [dependencies]
 jni = { version = "0.22.4", features = ["invocation"] }
-serde_json = "1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "io-util",
+    "net",
+    "signal",
+    "sync",
+    "time",
+] }
 anyhow = "1"
 prost = "0.14.3"
 tempfile = "3.27.0"
@@ -32,10 +39,12 @@ tree-sitter-xml = "0.7.0"
 adb_client = "3.2.0"
 quick-xml = "0.39.2"
 pathfinding = "4"
+zstd = { version = "0.13", default-features = false }
 
 [build-dependencies]
 prost-build = "0.14.3"
 toml = "1.1.2"
+zstd = { version = "0.13", default-features = false }
 
 [lints.clippy]
 pedantic = "warn"

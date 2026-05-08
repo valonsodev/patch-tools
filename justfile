@@ -19,3 +19,7 @@ clean:
 
 install: all
     cargo install --path patch-tools
+
+lint:
+    cd patch-tools && cargo clippy --all-targets
+    cd engine && ./gradlew compileKotlin

@@ -1,16 +1,9 @@
 use crate::diff;
 use crate::types::MatchedMethodDto;
-use std::fmt::Write as _;
 
-use super::helpers::{format_human_method_id, indented_block, score_badge};
+use super::helpers::{format_human_method_id, indented_block};
 use super::style;
 use crate::cli::OutputFormat;
-
-pub(super) struct ScoreRow {
-    pub(super) index: usize,
-    pub(super) score: i32,
-    pub(super) label: String,
-}
 
 pub(super) trait Formatter {
     fn heading(&self, level: u8, text: &str) -> String;
@@ -23,13 +16,17 @@ pub(super) trait Formatter {
     fn error(&self, text: &str) -> String;
     fn code_block(&self, lang: &str, content: &str) -> String;
     fn diff_block(&self, text: &str) -> String;
-    fn method_id(&self, class: &str, name: &str, params: &[String], ret: &str) -> String;
     fn matched_method_id(&self, method: &MatchedMethodDto) -> String;
     fn smali_method_id(&self, method: &crate::types::MethodInfoDto) -> String;
     fn render_mode(&self) -> diff::RenderMode;
     fn labeled_diff_block(&self, label: &str, kind: &str, diff_text: &str) -> String;
     fn no_changes_msg(&self) -> String;
-    fn score_table(&self, rows: &[ScoreRow]) -> String;
+}
+
+/// Format a method id directly for the human renderer. Markdown renderers
+/// embed method ids inline via `smali_method_id`/`matched_method_id` instead.
+pub(super) fn human_method_id(class: &str, name: &str, params: &[String], ret: &str) -> String {
+    format_human_method_id(class, name, params, ret)
 }
 
 pub(super) struct MarkdownFormatter;
@@ -77,10 +74,6 @@ impl Formatter for MarkdownFormatter {
         format!("```diff\n{text}```\n\n")
     }
 
-    fn method_id(&self, _class: &str, _name: &str, _params: &[String], _ret: &str) -> String {
-        unreachable!()
-    }
-
     fn matched_method_id(&self, method: &MatchedMethodDto) -> String {
         format!("`{}`", method.unique_id)
     }
@@ -99,25 +92,6 @@ impl Formatter for MarkdownFormatter {
 
     fn no_changes_msg(&self) -> String {
         "(no visible changes)\n\n".to_string()
-    }
-
-    fn score_table(&self, rows: &[ScoreRow]) -> String {
-        let mut output = String::from(
-            "| # | Score | Rating | Instruction |\n|--:|------:|--------|-------------|\n",
-        );
-        for row in rows {
-            writeln!(
-                output,
-                "| {} | {} | {} | `{}` |",
-                row.index,
-                row.score,
-                score_badge(row.score),
-                row.label,
-            )
-            .expect("writing to a String cannot fail");
-        }
-        output.push('\n');
-        output
     }
 }
 
@@ -162,10 +136,6 @@ impl Formatter for HumanFormatter {
         indented_block(text, "    ")
     }
 
-    fn method_id(&self, class: &str, name: &str, params: &[String], ret: &str) -> String {
-        format_human_method_id(class, name, params, ret)
-    }
-
     fn matched_method_id(&self, method: &MatchedMethodDto) -> String {
         format_human_method_id(
             &method.defining_class,
@@ -200,31 +170,9 @@ impl Formatter for HumanFormatter {
     fn no_changes_msg(&self) -> String {
         format!("    {}\n", style::dimmed("No visible changes."))
     }
-
-    fn score_table(&self, rows: &[ScoreRow]) -> String {
-        let mut output = String::new();
-        for row in rows {
-            let score_str = format!("{:>3}", row.score);
-            let colored_score = match row.score.cmp(&0) {
-                std::cmp::Ordering::Less => style::green(&score_str),
-                std::cmp::Ordering::Equal => style::dimmed(&score_str),
-                std::cmp::Ordering::Greater => style::red(&score_str),
-            };
-            writeln!(
-                output,
-                "  {:>3}. [{}] {} {}",
-                row.index,
-                colored_score,
-                score_badge(row.score),
-                row.label,
-            )
-            .expect("writing to a String cannot fail");
-        }
-        output
-    }
 }
 
-pub(super) fn formatter_for(format: &OutputFormat) -> &'static dyn Formatter {
+pub(super) fn formatter_for(format: OutputFormat) -> &'static dyn Formatter {
     match format {
         OutputFormat::Markdown => &MarkdownFormatter,
         OutputFormat::Human => &HumanFormatter,

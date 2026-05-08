@@ -10,7 +10,10 @@ use prost::Message;
 use std::io::Write;
 use tempfile::{Builder, NamedTempFile};
 
-const ENGINE_JAR: &[u8] = include_bytes!(env!("MORPHE_ENGINE_JAR"));
+/// zstd-compressed engine JAR. Decompressed at startup in-memory and written
+/// to a tempfile so the JVM can load it via the classpath option (`HotSpot` needs
+/// a real path; URLClassLoader-from-bytes would require Java-side glue).
+const ENGINE_JAR_ZST: &[u8] = include_bytes!(env!("MORPHE_ENGINE_JAR_ZST"));
 
 /// Rust wrapper around the Kotlin `JniFacade`.
 pub struct EngineJni {
@@ -26,9 +29,11 @@ impl EngineJni {
             .suffix(".jar")
             .tempfile()
             .context("failed to create temp engine JAR")?;
+        let decompressed =
+            zstd::decode_all(ENGINE_JAR_ZST).context("failed to decompress embedded engine JAR")?;
         engine_jar
             .as_file_mut()
-            .write_all(ENGINE_JAR)
+            .write_all(&decompressed)
             .context("failed to write embedded engine JAR")?;
         engine_jar
             .as_file_mut()
@@ -55,11 +60,19 @@ impl EngineJni {
 
         let mut builder = InitArgsBuilder::new()
             .version(jni::JNIVersion::V1_8)
-            .option(&classpath)
-            .option("-Xmx2g");
+            .option(&classpath);
         for prop in &props {
             builder = builder.option(prop);
         }
+
+        // Allow users to override or extend JVM args via env (e.g. -Xmx, -Xss).
+        // Tokens are split on whitespace; default is `-Xmx4g`.
+        let raw_opts = std::env::var("MORPHE_JAVA_OPTS").unwrap_or_else(|_| "-Xmx4g".to_string());
+        let user_opts: Vec<String> = raw_opts.split_whitespace().map(str::to_owned).collect();
+        for opt in &user_opts {
+            builder = builder.option(opt);
+        }
+
         let jvm_args = builder.build().context("failed to build JVM args")?;
 
         let jvm = JavaVM::new(jvm_args).context("failed to create JVM")?;
@@ -184,7 +197,7 @@ impl EngineJni {
         Ok(execution_result)
     }
 
-    pub fn close(&self) -> Result<()> {
+    fn close(&self) -> Result<()> {
         self.jvm
             .attach_current_thread(|env| -> Result<()> {
                 env.call_method(&self.facade, jni_str!("close"), jni_sig!("()V"), &[])

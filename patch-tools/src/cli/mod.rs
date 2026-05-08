@@ -15,7 +15,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum OutputFormat {
     Markdown,
     Human,

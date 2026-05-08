@@ -1,4 +1,6 @@
 pub mod client;
+mod engine_worker;
+mod resolver;
 pub mod runtime;
 pub mod server;
 

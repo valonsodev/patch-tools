@@ -37,14 +37,14 @@ impl DaemonClient {
     }
 
     client_method!(load_apk(path: &str) => load_apk);
-    client_method!(unload_apk(apk_selector: &str) => unload_apk);
+    client_method!(unload_apk(apk_selector: Option<String>) => unload_apk);
     client_method!(execute(script_path: &str, cap: Option<u32>, save_patched_apks: bool) => execute);
-    client_method!(generate_fingerprint(apk_selector: &str, method_id: &str, limit: Option<u32>) => generate_fingerprint);
-    client_method!(generate_class_fingerprint(apk_selector: &str, class_id: &str, limit: Option<u32>) => generate_class_fingerprint);
+    client_method!(generate_fingerprint(apk_selector: Option<String>, method_id: &str, limit: Option<u32>) => generate_fingerprint);
+    client_method!(generate_class_fingerprint(apk_selector: Option<String>, class_id: &str, limit: Option<u32>) => generate_class_fingerprint);
     client_method!(generate_common_fingerprint(targets: Vec<CommonFingerprintTargetSelector>, limit: Option<u32>) => generate_common_fingerprint);
     client_method!(search_methods(query: &str, limit: Option<u32>) => search_methods);
     client_method!(map_method(old_apk_selector: &str, method_id: &str, new_apk_selector: &str, limit: Option<u32>) => map_method);
-    client_method!(get_method_smali(apk_selector: &str, method_id: &str) => get_method_smali);
+    client_method!(get_method_smali(apk_selector: Option<String>, method_id: &str) => get_method_smali);
     client_method!(status() => status);
     client_method!(stop() => stop);
 

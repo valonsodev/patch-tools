@@ -2,7 +2,7 @@ use super::summary::{InstallResult, InstallSummary};
 use crate::cli::OutputFormat;
 use crate::output::style;
 
-pub(super) fn print_install_summary(format: &OutputFormat, summary: &InstallSummary) {
+pub(super) fn print_install_summary(format: OutputFormat, summary: &InstallSummary) {
     match format {
         OutputFormat::Markdown => print_install_summary_markdown(summary),
         OutputFormat::Human => print_install_summary_human(summary),

@@ -16,4 +16,3 @@ pub use generate::{
 };
 pub use index::{FingerprintIndex, build_index};
 pub use map::map_methods;
-pub use stability::inspect_stability;

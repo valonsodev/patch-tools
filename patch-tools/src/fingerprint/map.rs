@@ -191,7 +191,7 @@ fn parameter_similarity(source: &[String], target: &[String]) -> f64 {
         .zip(target.iter())
         .map(|(source, target)| type_similarity(source, target))
         .sum::<f64>();
-    let max_len = source.len().max(target.len()) as f64;
+    let max_len = usize_to_f64(source.len().max(target.len()));
 
     (aligned / max_len) * 0.75
         + if source.len() == target.len() {
@@ -209,9 +209,13 @@ fn access_similarity(source: i32, target: i32) -> f64 {
         return 1.0;
     }
 
-    let differing_bits = (source ^ target).count_ones() as f64;
-    let total_bits = relevant_flags.count_ones() as f64;
+    let differing_bits = f64::from((source ^ target).count_ones());
+    let total_bits = f64::from(relevant_flags.count_ones());
     1.0 - (differing_bits / total_bits)
+}
+
+fn usize_to_f64(value: usize) -> f64 {
+    f64::from(u32::try_from(value).expect("parameter count fits in u32"))
 }
 
 fn type_similarity(source: &str, target: &str) -> f64 {

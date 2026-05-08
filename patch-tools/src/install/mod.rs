@@ -11,7 +11,7 @@ use anyhow::{Result, bail};
 use std::path::Path;
 
 pub fn run_post_execute_install(
-    format: &OutputFormat,
+    format: OutputFormat,
     resolved_device: &str,
     execute_response: &DaemonResponse,
 ) -> Result<()> {
@@ -56,7 +56,7 @@ pub fn run_post_execute_install(
 }
 
 fn fail_install(
-    format: &OutputFormat,
+    format: OutputFormat,
     summary: &mut InstallSummary,
     message: String,
 ) -> anyhow::Error {

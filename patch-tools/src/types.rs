@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 mod generated {
     #![allow(clippy::derive_partial_eq_without_eq)]
     #![allow(clippy::doc_markdown)]
+    #![allow(clippy::large_enum_variant)]
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
     include!(concat!(env!("OUT_DIR"), "/patch_tools.rs"));
@@ -19,10 +20,10 @@ impl DaemonRequest {
         }
     }
 
-    pub fn unload_apk(apk_selector: impl Into<String>) -> Self {
+    pub fn unload_apk(apk_selector: Option<String>) -> Self {
         Self {
             kind: Some(daemon_request::Kind::UnloadApk(UnloadApkRequest {
-                apk_id: apk_selector.into(),
+                apk_id: apk_selector,
             })),
         }
     }
@@ -42,14 +43,14 @@ impl DaemonRequest {
     }
 
     pub fn generate_fingerprint(
-        apk_selector: impl Into<String>,
+        apk_selector: Option<String>,
         method_id: impl Into<String>,
         limit: Option<u32>,
     ) -> Self {
         Self {
             kind: Some(daemon_request::Kind::GenerateFingerprint(
                 GenerateFingerprintRequest {
-                    apk_id: apk_selector.into(),
+                    apk_id: apk_selector,
                     method_id: method_id.into(),
                     limit,
                 },
@@ -58,14 +59,14 @@ impl DaemonRequest {
     }
 
     pub fn generate_class_fingerprint(
-        apk_selector: impl Into<String>,
+        apk_selector: Option<String>,
         class_id: impl Into<String>,
         limit: Option<u32>,
     ) -> Self {
         Self {
             kind: Some(daemon_request::Kind::GenerateClassFingerprint(
                 GenerateClassFingerprintRequest {
-                    apk_id: apk_selector.into(),
+                    apk_id: apk_selector,
                     class_id: class_id.into(),
                     limit,
                 },
@@ -109,11 +110,11 @@ impl DaemonRequest {
         }
     }
 
-    pub fn get_method_smali(apk_selector: impl Into<String>, method_id: impl Into<String>) -> Self {
+    pub fn get_method_smali(apk_selector: Option<String>, method_id: impl Into<String>) -> Self {
         Self {
             kind: Some(daemon_request::Kind::GetMethodSmali(
                 GetMethodSmaliRequest {
-                    apk_id: apk_selector.into(),
+                    apk_id: apk_selector,
                     method_id: method_id.into(),
                 },
             )),
@@ -176,6 +177,23 @@ required_ref!(MethodData, info_ref -> MethodInfoDto, info, "validated method dat
 required_ref!(InstructionFeature, kind_ref -> instruction_feature::Kind, kind, "validated instruction feature missing kind");
 required_ref!(EngineEvent, kind_ref -> engine_event::Kind, kind, "validated engine event missing kind");
 required_ref!(EngineResult, kind_ref -> engine_result::Kind, kind, "validated engine result missing kind");
+required_ref!(ApkStatus, identity_ref -> ApkIdentity, identity, "validated apk status missing identity");
+required_ref!(CommonFingerprintTargetDto, apk_ref -> ApkIdentity, apk, "validated common fingerprint target missing apk");
+required_ref!(CommonFingerprintTargetDto, method_ref -> MethodInfoDto, method, "validated common fingerprint target missing method");
+required_ref!(MethodMapResponse, source_apk_ref -> ApkIdentity, source_apk, "validated method map response missing source apk");
+required_ref!(MethodMapResponse, target_apk_ref -> ApkIdentity, target_apk, "validated method map response missing target apk");
+required_ref!(MethodMapResponse, source_method_ref -> MethodInfoDto, source_method, "validated method map response missing source method");
+
+impl DaemonResponse {
+    /// Like [`Self::kind_ref`] but assumes the response was already validated when it
+    /// was decoded from the wire. Panics if the kind is missing — only call this on a
+    /// `DaemonResponse` that came from `daemon::read_response`.
+    pub fn kind_validated(&self) -> &daemon_response::Kind {
+        self.kind
+            .as_ref()
+            .expect("validated daemon response missing kind")
+    }
+}
 
 impl MethodDiffDto {
     pub fn change_kind_enum(&self) -> method_diff_dto::ChangeKind {

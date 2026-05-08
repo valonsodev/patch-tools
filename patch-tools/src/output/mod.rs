@@ -1,5 +1,6 @@
 pub mod style;
 
+mod execution;
 mod formatters;
 mod helpers;
 mod inspect;
@@ -14,7 +15,7 @@ use formatters::formatter_for;
 use render::{RenderOutput, render_with};
 
 /// Print a daemon response in the selected format.
-pub fn print_response(response: &DaemonResponse, format: &OutputFormat) {
+pub fn print_response(response: &DaemonResponse, format: OutputFormat) {
     let rendered = render_response(response, format);
     if !rendered.stdout.is_empty() {
         print!("{}", rendered.stdout);
@@ -36,7 +37,7 @@ impl fmt::Display for PrintedDaemonError {
 impl std::error::Error for PrintedDaemonError {}
 
 /// Print a daemon response and return an error if it was a daemon-level failure.
-pub fn print_response_checked(response: &DaemonResponse, format: &OutputFormat) -> Result<()> {
+pub fn print_response_checked(response: &DaemonResponse, format: OutputFormat) -> Result<()> {
     print_response(response, format);
     if matches!(response.kind_ref()?, daemon_response::Kind::Error(_)) {
         return Err(PrintedDaemonError.into());
@@ -44,7 +45,7 @@ pub fn print_response_checked(response: &DaemonResponse, format: &OutputFormat) 
     Ok(())
 }
 
-pub(crate) fn render_response(response: &DaemonResponse, format: &OutputFormat) -> RenderOutput {
+pub(crate) fn render_response(response: &DaemonResponse, format: OutputFormat) -> RenderOutput {
     let fmt = formatter_for(format);
     render_with(response, fmt)
 }

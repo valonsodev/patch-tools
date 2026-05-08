@@ -1,6 +1,5 @@
 use super::{client::DaemonClient, server};
 use crate::cli::OutputFormat;
-use crate::engine_jni;
 use crate::output;
 use crate::types::daemon_response;
 use anyhow::{Context, Result};
@@ -73,7 +72,7 @@ pub async fn start(sock: &Path, apks: &[PathBuf]) -> Result<()> {
                 .with_context(|| format!("APK not found: {}", apk.display()))?;
             let mut client = DaemonClient::connect(sock).await?;
             let resp = client.load_apk(path.to_string_lossy().as_ref()).await?;
-            output::print_response_checked(&resp, &OutputFormat::Human)?;
+            output::print_response_checked(&resp, OutputFormat::Human)?;
         }
     }
 
@@ -99,11 +98,8 @@ pub async fn run(sock: &Path) -> Result<()> {
         )
         .init();
 
-    let engine = engine_jni::EngineJni::new()?;
-    tracing::info!("JVM started, engine facade created");
-
     tracing::info!("Starting daemon at {}", sock.display());
-    server::run(engine, sock).await?;
+    server::run(sock).await?;
     Ok(())
 }
 
@@ -185,6 +181,13 @@ async fn wait_for_socket_removal(sock: &Path, timeout: std::time::Duration) -> R
     }
 }
 
+/// Detach the daemon from the launching shell so it survives the parent exiting.
+///
+/// `setsid()` creates a new session and process group with no controlling
+/// terminal. `Command::process_group(0)` (stable in std) only sets the pgid —
+/// the child would still be associated with the parent's session and would
+/// receive SIGHUP when the shell exits. We need the full session split, which
+/// requires `unsafe { setsid() }` from `pre_exec` (after fork, before exec).
 #[cfg(unix)]
 fn configure_detached_daemon(cmd: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;

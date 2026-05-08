@@ -1,6 +1,11 @@
 package dev.valonso.tools.engine.scripting
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import java.io.File
 import kotlin.script.experimental.api.EvaluationResult
 import kotlin.script.experimental.api.ResultValue
@@ -54,18 +59,23 @@ class MorpheScriptingHost {
     private data class CacheKey(val path: String, val lastModified: Long)
     private val compiledScriptCache = mutableMapOf<CacheKey, CompiledScript>()
 
-    init {
+    /** Background scope for the preload warm-up. SupervisorJob so a preload failure doesn't cancel callers. */
+    private val preloadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    /**
+     * Warms the Kotlin scripting host by compiling and evaluating `Unit` once.
+     * The first real `evaluateScriptFile` awaits this so it can never collide
+     * with a preload still in flight.
+     */
+    private val preload: Deferred<Unit> = preloadScope.async {
         logger.debug { "Preloading BasicJvmScriptingHost..." }
-        Thread {
-            runCatching {
-                val execTime = measureTime {
-                    kotlinx.coroutines.runBlocking { evaluate("Unit".toScriptSource()) }
-                }
-                logger.debug { "Preloading done in ${execTime.inWholeMilliseconds.milliseconds}" }
-            }.onFailure { exception ->
-                logger.error(exception) { "Preloading BasicJvmScriptingHost failed" }
-            }
-        }.start()
+        runCatching {
+            val execTime = measureTime { evaluate("Unit".toScriptSource()) }
+            logger.debug { "Preloading done in ${execTime.inWholeMilliseconds.milliseconds}" }
+        }.onFailure { exception ->
+            logger.error(exception) { "Preloading BasicJvmScriptingHost failed" }
+        }
+        Unit
     }
 
     private suspend fun compile(script: SourceCode): ResultWithDiagnostics<CompiledScript> =
@@ -88,6 +98,9 @@ class MorpheScriptingHost {
         )
 
     suspend fun evaluateScriptFile(scriptFilePath: String): ScriptEvalResult<Any?> {
+        // Block any in-flight preload so the first real evaluation can't race with it.
+        preload.await()
+
         val scriptFile = File(scriptFilePath)
         if (!scriptFile.exists()) {
             return ScriptEvalResult.Failure(errors = listOf("Script file not found: $scriptFilePath"))

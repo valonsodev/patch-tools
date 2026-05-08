@@ -32,7 +32,19 @@ fn main() {
     let engine_jar = engine_jar
         .canonicalize()
         .expect("failed to canonicalize embedded engine JAR path");
-    println!("cargo:rustc-env=MORPHE_ENGINE_JAR={}", engine_jar.display());
+
+    // zstd-compress the JAR into OUT_DIR; engine_jni decompresses in memory at startup.
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let jar_bytes = fs::read(&engine_jar).expect("failed to read embedded engine JAR");
+    let compressed_jar = zstd::encode_all(jar_bytes.as_slice(), 19)
+        .expect("failed to zstd-compress embedded engine JAR");
+    let compressed_jar_path = out_dir.join("engine-all.jar.zst");
+    fs::write(&compressed_jar_path, &compressed_jar)
+        .expect("failed to write compressed engine JAR to OUT_DIR");
+    println!(
+        "cargo:rustc-env=MORPHE_ENGINE_JAR_ZST={}",
+        compressed_jar_path.display()
+    );
 
     let morphe_patcher_version = format!("v{}", read_version(&versions_toml, "morphe-patcher"));
     let morphe_patches_library_version = format!(

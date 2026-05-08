@@ -61,15 +61,6 @@ pub(super) fn format_duration(secs: u64) -> String {
     }
 }
 
-pub(super) fn score_badge(score: i32) -> &'static str {
-    match score {
-        ..=-1 => "✅ stable",
-        0 => "➖ neutral",
-        1 => "⚠️  fragile",
-        _ => "🔴 very fragile",
-    }
-}
-
 pub(super) fn indented_block(text: &str, prefix: &str) -> String {
     let mut output = String::new();
     for line in text.lines() {
