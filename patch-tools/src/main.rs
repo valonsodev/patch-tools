@@ -7,6 +7,7 @@ mod fingerprint;
 mod install;
 mod morphe_render;
 mod output;
+mod save;
 mod search;
 mod syndiff;
 mod types;

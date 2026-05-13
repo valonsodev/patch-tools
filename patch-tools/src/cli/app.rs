@@ -2,6 +2,7 @@ use super::{Cli, Commands, DaemonAction, OutputFormat};
 use crate::daemon::{client::DaemonClient, runtime};
 use crate::install as run_install;
 use crate::output;
+use crate::save as run_save;
 use crate::types::CommonFingerprintTargetSelector;
 use anyhow::{Context, Result, bail};
 use clap::CommandFactory;
@@ -23,8 +24,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::Run {
             script_path,
             install: should_install,
+            save,
             device,
-        } => handle_run(&sock, script_path, should_install, device, format).await?,
+        } => handle_run(&sock, script_path, should_install, save, device, format).await?,
         Commands::Scaffold => runtime::scaffold_scripts()?,
         Commands::Fingerprint { args, limit } => {
             let (apk, method_id) = split_optional_apk_selector(args, "method_id")?;
@@ -101,6 +103,7 @@ async fn handle_run(
     sock: &Path,
     script_path: PathBuf,
     should_install: bool,
+    save: Option<PathBuf>,
     device: Option<String>,
     format: OutputFormat,
 ) -> Result<()> {
@@ -115,15 +118,26 @@ async fn handle_run(
     } else {
         None
     };
+    let save_target = save
+        .as_deref()
+        .map(run_save::preflight_save_target)
+        .transpose()
+        .context("run --save preflight failed")?;
 
+    let save_patched_apks = should_install || save_target.is_some();
     let mut client = connect_daemon(sock).await?;
     let resp = client
-        .execute(path.to_string_lossy().as_ref(), None, should_install)
+        .execute(path.to_string_lossy().as_ref(), None, save_patched_apks)
         .await?;
     output::print_response_checked(&resp, format)?;
+    let save_result = save_target
+        .as_ref()
+        .map(|target| run_save::run_post_execute_save(format, target, &resp))
+        .transpose();
     if let Some(resolved_device) = install_device.as_deref() {
         run_install::run_post_execute_install(format, resolved_device, &resp)?;
     }
+    save_result?;
     Ok(())
 }
 

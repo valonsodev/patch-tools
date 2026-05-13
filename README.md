@@ -73,7 +73,7 @@ Commands:
 - `daemon status`: show daemon status
 - `load <apk_path>`: load an APK, APKM, or XAPK
 - `unload [apk]`: unload a package by package name, package/version, or internal ID; omit when exactly one APK is loaded
-- `run <script_path> [--install] [--device <serial>]`: run a `.kts` script and optionally install patched APKs with `adb`
+- `run <script_path> [--save[=PATH]] [--install] [--device <serial>]`: run a `.kts` script; bare `--save` writes patched APKs into the current directory using the engine's filename, `--save=foo.apk` renames the output (single APK only), `--save=dir/` writes into that directory, `--install` installs them with `adb`
 - `scaffold`: create a `main.kts` and `AGENTS.md` in the current directory
 - `fingerprint [apk] <method_id> [-n, --limit <count>]`: generate method fingerprints; omit `apk` when exactly one APK is loaded
 - `class-fingerprint [apk] <class_id> [-n, --limit <count>]`: generate class fingerprints; omit `apk` when exactly one APK is loaded

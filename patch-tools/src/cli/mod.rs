@@ -45,6 +45,17 @@ pub enum Commands {
         /// Save and install patched APKs via adb after a successful run
         #[arg(long)]
         install: bool,
+        /// Save patched APK to PATH. Bare `--save` writes into the current directory
+        /// using the engine's filename. `--save=foo.apk` renames the output (single
+        /// APK only). `--save=dir/` writes into that directory. Can be combined with --install.
+        #[arg(
+            long,
+            value_name = "PATH",
+            num_args = 0..=1,
+            default_missing_value = ".",
+            require_equals = true,
+        )]
+        save: Option<PathBuf>,
         /// adb device serial to target
         #[arg(long)]
         device: Option<String>,
