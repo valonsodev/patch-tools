@@ -25,7 +25,6 @@ import kotlin.script.experimental.dependencies.CompoundDependenciesResolver
 import kotlin.script.experimental.dependencies.DependsOn
 import kotlin.script.experimental.dependencies.FileSystemDependenciesResolver
 import kotlin.script.experimental.dependencies.Repository
-import kotlin.script.experimental.dependencies.maven.MavenDependenciesResolver
 import kotlin.script.experimental.dependencies.resolveFromScriptSourceAnnotations
 import kotlin.script.experimental.host.FileBasedScriptSource
 import kotlin.script.experimental.host.FileScriptSource
@@ -125,4 +124,4 @@ fun configureMavenDepsOnAnnotations(context: ScriptConfigurationRefinementContex
 }
 
 private val resolver =
-    CompoundDependenciesResolver(FileSystemDependenciesResolver(), MavenDependenciesResolver())
+    CompoundDependenciesResolver(FileSystemDependenciesResolver())

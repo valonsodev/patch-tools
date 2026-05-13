@@ -26,7 +26,6 @@ kotlin-scripting-jvm = { module = "org.jetbrains.kotlin:kotlin-scripting-jvm", v
 kotlin-scripting-common = { module = "org.jetbrains.kotlin:kotlin-scripting-common", version.ref = "kotlin" }
 kotlin-scripting-jvm-host = { module = "org.jetbrains.kotlin:kotlin-scripting-jvm-host", version.ref = "kotlin" }
 kotlin-scripting-dependencies = { module = "org.jetbrains.kotlin:kotlin-scripting-dependencies", version.ref = "kotlin" }
-kotlin-scripting-dependencies-maven = { module = "org.jetbrains.kotlin:kotlin-scripting-dependencies-maven", version.ref = "kotlin" }
 
 # Morphe stuff
 morphe-patcher = { module = "app.morphe:morphe-patcher", version.ref = "morphe-patcher" }
@@ -49,5 +48,5 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 wire = { id = "com.squareup.wire", version.ref = "wire" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 [bundles]
-scripting = ["kotlin-scripting-jvm", "kotlin-scripting-common", "kotlin-scripting-jvm-host", "kotlin-scripting-dependencies", "kotlin-scripting-dependencies-maven"]
+scripting = ["kotlin-scripting-jvm", "kotlin-scripting-common", "kotlin-scripting-jvm-host", "kotlin-scripting-dependencies"]
 logging = ["kotlin-logging-jvm", "slf4j-api", "logback-classic"]
