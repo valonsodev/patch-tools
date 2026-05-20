@@ -2,8 +2,10 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 
+use super::syntax_defaults::{default_classify_atom, default_detect_delimiters};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct SyntaxId(NonZeroUsize);
+pub(crate) struct SyntaxId(NonZeroUsize);
 
 impl SyntaxId {
     fn new(index: usize) -> Self {
@@ -11,34 +13,32 @@ impl SyntaxId {
     }
 
     #[inline]
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self.0.get() - 1
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SyntaxHint<'a> {
-    String,
+pub(crate) enum SyntaxHint<'a> {
     Comment(&'a str),
     Punctuation,
 }
 
 #[derive(Debug)]
-pub struct SyntaxTree<'a> {
+pub(crate) struct SyntaxTree<'a> {
     nodes: Vec<SyntaxNode<'a>>,
     allow_same_kind_replacements: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct SyntaxNode<'a> {
-    pub id: SyntaxId,
-    pub kind_id: u16,
-    pub structural_hash: u64,
-    pub byte_range: Range<usize>,
-    pub hint: Option<SyntaxHint<'a>>,
-    pub delimiters: Delimiters<'a>,
-    pub descendant_count: usize,
-    pub depth: usize,
+pub(crate) struct SyntaxNode<'a> {
+    pub(crate) kind_id: u16,
+    pub(crate) structural_hash: u64,
+    pub(crate) byte_range: Range<usize>,
+    pub(crate) hint: Option<SyntaxHint<'a>>,
+    pub(crate) delimiters: Delimiters<'a>,
+    pub(crate) descendant_count: usize,
+    pub(crate) depth: usize,
     parent: Option<SyntaxId>,
 }
 
@@ -46,59 +46,59 @@ type Delimiters<'a> = [Option<(Range<usize>, &'a str)>; 2];
 
 impl SyntaxNode<'_> {
     #[inline]
-    pub fn open_delimiter(&self) -> Option<&str> {
+    pub(crate) fn open_delimiter(&self) -> Option<&str> {
         self.delimiters[0].as_ref().map(|delimiter| delimiter.1)
     }
 
     #[inline]
-    pub fn close_delimiter(&self) -> Option<&str> {
+    pub(crate) fn close_delimiter(&self) -> Option<&str> {
         self.delimiters[1].as_ref().map(|delimiter| delimiter.1)
     }
 
     #[inline]
-    pub fn open_delimiter_range(&self) -> Option<Range<usize>> {
+    pub(crate) fn open_delimiter_range(&self) -> Option<Range<usize>> {
         self.delimiters[0]
             .as_ref()
             .map(|delimiter| delimiter.0.clone())
     }
 
     #[inline]
-    pub fn close_delimiter_range(&self) -> Option<Range<usize>> {
+    pub(crate) fn close_delimiter_range(&self) -> Option<Range<usize>> {
         self.delimiters[1]
             .as_ref()
             .map(|delimiter| delimiter.0.clone())
     }
 
     #[inline]
-    pub fn delimited_content_range(&self) -> Option<Range<usize>> {
+    pub(crate) fn delimited_content_range(&self) -> Option<Range<usize>> {
         delimited_content_range(self.byte_range.clone(), &self.delimiters)
     }
 
     #[inline]
-    pub fn has_delimiters(&self) -> bool {
+    pub(crate) fn has_delimiters(&self) -> bool {
         self.delimiters[0].is_some() && self.delimiters[1].is_some()
     }
 
     #[inline]
-    pub fn is_list(&self) -> bool {
+    pub(crate) fn is_list(&self) -> bool {
         self.descendant_count > 0
     }
 
     #[inline]
-    pub fn is_atom(&self) -> bool {
+    pub(crate) fn is_atom(&self) -> bool {
         self.descendant_count == 0
     }
 }
 
 impl<'a> SyntaxTree<'a> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             nodes: Vec::new(),
             allow_same_kind_replacements: false,
         }
     }
 
-    pub fn root(&self) -> Option<SyntaxId> {
+    pub(crate) fn root(&self) -> Option<SyntaxId> {
         if self.nodes.is_empty() {
             None
         } else {
@@ -107,21 +107,16 @@ impl<'a> SyntaxTree<'a> {
     }
 
     #[inline]
-    pub fn get(&self, id: SyntaxId) -> &SyntaxNode<'a> {
+    pub(crate) fn get(&self, id: SyntaxId) -> &SyntaxNode<'a> {
         &self.nodes[id.index()]
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.nodes.len()
     }
 
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-
-    pub fn first_child(&self, id: SyntaxId) -> Option<SyntaxId> {
+    pub(crate) fn first_child(&self, id: SyntaxId) -> Option<SyntaxId> {
         let node = self.get(id);
         if node.descendant_count > 0 {
             Some(SyntaxId::new(id.index() + 1))
@@ -130,7 +125,7 @@ impl<'a> SyntaxTree<'a> {
         }
     }
 
-    pub fn next_sibling(&self, id: SyntaxId) -> Option<SyntaxId> {
+    pub(crate) fn next_sibling(&self, id: SyntaxId) -> Option<SyntaxId> {
         let node = self.get(id);
         let next_index = id.index() + 1 + node.descendant_count;
 
@@ -146,15 +141,11 @@ impl<'a> SyntaxTree<'a> {
     }
 
     #[inline]
-    pub fn parent(&self, id: SyntaxId) -> Option<SyntaxId> {
+    pub(crate) fn parent(&self, id: SyntaxId) -> Option<SyntaxId> {
         self.get(id).parent
     }
 
-    pub fn preorder(&self) -> impl Iterator<Item = SyntaxId> + '_ {
-        (0..self.nodes.len()).map(SyntaxId::new)
-    }
-
-    pub fn cursor(&self) -> SyntaxTreeCursor<'_> {
+    pub(crate) fn cursor(&self) -> SyntaxTreeCursor<'_> {
         SyntaxTreeCursor {
             tree: self,
             last: None,
@@ -162,15 +153,7 @@ impl<'a> SyntaxTree<'a> {
         }
     }
 
-    pub fn cursor_at(&self, node: SyntaxId) -> SyntaxTreeCursor<'_> {
-        SyntaxTreeCursor {
-            tree: self,
-            last: None,
-            current: Some(node),
-        }
-    }
-
-    pub fn subtree(&self, root: SyntaxId) -> Self {
+    pub(crate) fn subtree(&self, root: SyntaxId) -> Self {
         let root_node = self.get(root);
         let start = root.index();
         let end = start + root_node.descendant_count + 1;
@@ -178,15 +161,13 @@ impl<'a> SyntaxTree<'a> {
 
         let nodes = self.nodes[start..end]
             .iter()
-            .enumerate()
-            .map(|(relative_index, node)| {
+            .map(|node| {
                 let parent = node.parent.and_then(|parent| {
                     (parent.index() >= start && parent.index() < end)
                         .then(|| SyntaxId::new(parent.index() - start))
                 });
 
                 SyntaxNode {
-                    id: SyntaxId::new(relative_index),
                     kind_id: node.kind_id,
                     structural_hash: node.structural_hash,
                     byte_range: node.byte_range.clone(),
@@ -206,7 +187,7 @@ impl<'a> SyntaxTree<'a> {
     }
 
     #[inline]
-    pub fn allow_same_kind_replacements(&self) -> bool {
+    pub(crate) fn allow_same_kind_replacements(&self) -> bool {
         self.allow_same_kind_replacements
     }
 }
@@ -218,7 +199,7 @@ impl Default for SyntaxTree<'_> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct SyntaxTreeCursor<'a> {
+pub(crate) struct SyntaxTreeCursor<'a> {
     tree: &'a SyntaxTree<'a>,
     last: Option<SyntaxId>,
     current: Option<SyntaxId>,
@@ -226,69 +207,27 @@ pub struct SyntaxTreeCursor<'a> {
 
 impl<'a> SyntaxTreeCursor<'a> {
     #[inline]
-    pub fn id(&self) -> Option<SyntaxId> {
+    pub(crate) fn id(&self) -> Option<SyntaxId> {
         self.current
     }
 
     #[inline]
-    pub fn node(&self) -> Option<&'a SyntaxNode<'_>> {
+    pub(crate) fn node(&self) -> Option<&'a SyntaxNode<'_>> {
         self.current.map(|id| self.tree.get(id))
     }
 
     #[inline]
-    pub fn is_end(&self) -> bool {
+    pub(crate) fn is_end(&self) -> bool {
         self.current.is_none()
     }
 
     #[inline]
-    pub fn tree(&self) -> &'a SyntaxTree<'_> {
+    pub(crate) fn tree(&self) -> &'a SyntaxTree<'_> {
         self.tree
     }
 
-    pub fn goto_first_child(&mut self) -> bool {
-        if let Some(id) = self.current
-            && let Some(child) = self.tree.first_child(id)
-        {
-            self.last = Some(id);
-            self.current = Some(child);
-            return true;
-        }
-        false
-    }
-
-    pub fn goto_next_sibling(&mut self) -> bool {
-        if let Some(id) = self.current
-            && let Some(sibling) = self.tree.next_sibling(id)
-        {
-            self.last = Some(id);
-            self.current = Some(sibling);
-            return true;
-        }
-        false
-    }
-
-    pub fn goto_parent(&mut self) -> bool {
-        if let Some(id) = self.current
-            && let Some(parent) = self.tree.parent(id)
-        {
-            self.last = Some(id);
-            self.current = Some(parent);
-            return true;
-        }
-        false
-    }
-
-    pub fn goto_last(&mut self) -> bool {
-        if let Some(id) = self.last {
-            self.last = self.current;
-            self.current = Some(id);
-            return true;
-        }
-        false
-    }
-
     #[inline]
-    pub fn first_child(&self) -> Self {
+    pub(crate) fn first_child(&self) -> Self {
         Self {
             tree: self.tree,
             last: self.current.or(self.last),
@@ -297,7 +236,7 @@ impl<'a> SyntaxTreeCursor<'a> {
     }
 
     #[inline]
-    pub fn next_sibling(&self) -> Self {
+    pub(crate) fn next_sibling(&self) -> Self {
         Self {
             tree: self.tree,
             last: self.current.or(self.last),
@@ -306,7 +245,7 @@ impl<'a> SyntaxTreeCursor<'a> {
     }
 
     #[inline]
-    pub fn last(&self) -> Self {
+    pub(crate) fn last(&self) -> Self {
         Self {
             tree: self.tree,
             last: self.current,
@@ -315,7 +254,7 @@ impl<'a> SyntaxTreeCursor<'a> {
     }
 
     #[inline]
-    pub fn parent(&self) -> Self {
+    pub(crate) fn parent(&self) -> Self {
         Self {
             tree: self.tree,
             last: self.current.or(self.last),
@@ -324,7 +263,7 @@ impl<'a> SyntaxTreeCursor<'a> {
     }
 
     #[inline]
-    pub fn depth(&self) -> usize {
+    pub(crate) fn depth(&self) -> usize {
         self.current.map_or(0, |id| self.tree.get(id).depth)
     }
 }
@@ -343,33 +282,53 @@ impl Hash for SyntaxTreeCursor<'_> {
     }
 }
 
-pub fn build_tree<'a>(cursor: &tree_sitter::TreeCursor<'_>, source: &'a str) -> SyntaxTree<'a> {
-    build_tree_with_options(cursor, source, &[], BuildTreeOptions::default())
-}
+/// Classifies a leaf tree-sitter node into a [`SyntaxHint`].
+///
+/// Called once per atom during tree building so the diff engine can flag
+/// "this is punctuation" or "this is a comment" without baking those rules
+/// into the core. Languages with non-Western conventions (or no punctuation at
+/// all) override this; common-case languages use [`default_classify_atom`].
+pub(crate) type AtomClassifier =
+    for<'a> fn(node: tree_sitter::Node<'_>, text: &'a str) -> Option<SyntaxHint<'a>>;
 
-pub fn build_tree_with_exclusions<'a>(
-    cursor: &tree_sitter::TreeCursor<'_>,
+/// Decides whether a list node's first/last children look like a delimiter
+/// pair (`{`/`}`, `(`/`)`, …). Returning `Some((open, close))` flags the node
+/// as delimited so the diff engine can match delimiters independently of
+/// their contents. Defaults to [`default_detect_delimiters`].
+pub(crate) type DelimiterDetector = for<'a> fn(
+    first: tree_sitter::Node<'_>,
+    last: tree_sitter::Node<'_>,
     source: &'a str,
-    excluded_node_types: &[&str],
-) -> SyntaxTree<'a> {
-    build_tree_with_options(
-        cursor,
-        source,
-        excluded_node_types,
-        BuildTreeOptions::default(),
-    )
-}
+) -> Option<(&'a str, &'a str)>;
 
-#[derive(Clone, Copy, Default)]
-pub struct BuildTreeOptions {
+#[derive(Clone, Copy)]
+pub(crate) struct BuildTreeOptions {
     skip_node: Option<fn(tree_sitter::Node<'_>, &str) -> bool>,
     sort_children: Option<fn(tree_sitter::Node<'_>, &str, &mut Vec<tree_sitter::Node<'_>>)>,
     allow_same_kind_replacements: bool,
+    classify_atom: AtomClassifier,
+    detect_delimiters: DelimiterDetector,
+    excluded_node_types: &'static [&'static str],
+    atomic_node_types: &'static [&'static str],
+}
+
+impl Default for BuildTreeOptions {
+    fn default() -> Self {
+        Self {
+            skip_node: None,
+            sort_children: None,
+            allow_same_kind_replacements: false,
+            classify_atom: default_classify_atom,
+            detect_delimiters: default_detect_delimiters,
+            excluded_node_types: &[],
+            atomic_node_types: &[],
+        }
+    }
 }
 
 impl BuildTreeOptions {
     #[inline]
-    pub const fn with_skip_node(
+    pub(crate) const fn with_skip_node(
         mut self,
         skip_node: fn(tree_sitter::Node<'_>, &str) -> bool,
     ) -> Self {
@@ -378,7 +337,32 @@ impl BuildTreeOptions {
     }
 
     #[inline]
-    pub const fn with_sort_children(
+    pub(crate) const fn with_excluded_node_types(
+        mut self,
+        types: &'static [&'static str],
+    ) -> Self {
+        self.excluded_node_types = types;
+        self
+    }
+
+    /// Treat the listed tree-sitter node kinds as atomic leaves: their
+    /// children aren't walked, and the diff engine sees the node as a single
+    /// token whose text is its full byte range. Use this when a grammar
+    /// over-decomposes something the diff should treat as one unit — e.g.,
+    /// Smali's `class_identifier` (`Lpath/to/Class;`) which the grammar
+    /// splits into per-segment children, producing noisy per-segment diff
+    /// markers when only the path changes.
+    #[inline]
+    pub(crate) const fn with_atomic_node_types(
+        mut self,
+        types: &'static [&'static str],
+    ) -> Self {
+        self.atomic_node_types = types;
+        self
+    }
+
+    #[inline]
+    pub(crate) const fn with_sort_children(
         mut self,
         sort_children: fn(tree_sitter::Node<'_>, &str, &mut Vec<tree_sitter::Node<'_>>),
     ) -> Self {
@@ -387,23 +371,43 @@ impl BuildTreeOptions {
     }
 
     #[inline]
-    pub const fn with_same_kind_replacements(mut self, allow: bool) -> Self {
+    pub(crate) const fn with_same_kind_replacements(mut self, allow: bool) -> Self {
         self.allow_same_kind_replacements = allow;
+        self
+    }
+
+    /// Override the atom classifier. Smali and XML accept the default; this
+    /// hook exists so a language with non-default punctuation/comment
+    /// conventions can be added without modifying the core.
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) const fn with_classify_atom(mut self, classify: AtomClassifier) -> Self {
+        self.classify_atom = classify;
+        self
+    }
+
+    /// Override the delimiter detector. Smali and XML accept the default;
+    /// this hook exists for grammars that use multi-character or keyword
+    /// delimiters (e.g., a future Kotlin/Java adapter wanting to match
+    /// braces explicitly).
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) const fn with_detect_delimiters(mut self, detect: DelimiterDetector) -> Self {
+        self.detect_delimiters = detect;
         self
     }
 }
 
-pub fn build_tree_with_options<'a>(
+pub(crate) fn build_tree<'a>(
     cursor: &tree_sitter::TreeCursor<'_>,
     source: &'a str,
-    excluded_node_types: &[&str],
     options: BuildTreeOptions,
 ) -> SyntaxTree<'a> {
     let mut nodes = Vec::new();
     let root = cursor.node();
 
     if root.child_count() > 0 || !root.is_extra() {
-        let _ = build_tree_recursive(root, &mut nodes, None, source, excluded_node_types, options);
+        let _ = build_tree_recursive(root, &mut nodes, None, source, options);
     }
 
     SyntaxTree {
@@ -417,7 +421,6 @@ fn build_tree_recursive<'a>(
     nodes: &mut Vec<SyntaxNode<'a>>,
     parent: Option<SyntaxId>,
     source: &'a str,
-    excluded_node_types: &[&str],
     options: BuildTreeOptions,
 ) -> Option<SyntaxId> {
     let flattened = ts_node
@@ -428,7 +431,7 @@ fn build_tree_recursive<'a>(
         ts_node = flattened;
     }
 
-    if excluded_node_types.contains(&ts_node.kind())
+    if options.excluded_node_types.contains(&ts_node.kind())
         || options
             .skip_node
             .is_some_and(|skip_node| skip_node(ts_node, source))
@@ -438,7 +441,6 @@ fn build_tree_recursive<'a>(
 
     let this_id = SyntaxId::new(nodes.len());
     nodes.push(SyntaxNode {
-        id: this_id,
         kind_id: ts_node.kind_id(),
         structural_hash: 0,
         byte_range: ts_node.byte_range(),
@@ -452,7 +454,19 @@ fn build_tree_recursive<'a>(
     let mut hasher = std::hash::DefaultHasher::new();
     ts_node.kind_id().hash(&mut hasher);
 
-    let (delimiters, _) = detect_node_delimiters(ts_node, source, &mut hasher);
+    if options.atomic_node_types.contains(&ts_node.kind()) {
+        // Treat as a leaf: hash the literal text, skip delimiter detection
+        // and children. The diff engine then sees this node as a single atom
+        // whose text is its full byte range.
+        if let Some(text) = source.get(ts_node.byte_range()) {
+            text.hash(&mut hasher);
+        }
+        let node = &mut nodes[this_id.index()];
+        node.structural_hash = hasher.finish();
+        return Some(this_id);
+    }
+
+    let (delimiters, _) = detect_node_delimiters(ts_node, source, &mut hasher, options.detect_delimiters);
     let mut descendant_count = 0;
 
     let mut children = collect_child_nodes(ts_node, source, &delimiters, options);
@@ -466,7 +480,6 @@ fn build_tree_recursive<'a>(
             nodes,
             Some(this_id),
             source,
-            excluded_node_types,
             options,
         );
 
@@ -477,7 +490,14 @@ fn build_tree_recursive<'a>(
         }
     }
 
-    let hint = infer_leaf_hint(descendant_count, ts_node, source, &delimiters, &mut hasher);
+    let hint = infer_leaf_hint(
+        descendant_count,
+        ts_node,
+        source,
+        &delimiters,
+        &mut hasher,
+        options.classify_atom,
+    );
 
     let node = &mut nodes[this_id.index()];
     node.structural_hash = hasher.finish();
@@ -523,6 +543,7 @@ fn detect_node_delimiters<'a>(
     ts_node: tree_sitter::Node<'_>,
     source: &'a str,
     hasher: &mut std::hash::DefaultHasher,
+    detect: DelimiterDetector,
 ) -> (Delimiters<'a>, usize) {
     let mut delimiters = [None, None];
     let mut remaining_children = ts_node.child_count();
@@ -538,7 +559,7 @@ fn detect_node_delimiters<'a>(
         )
         && first_child.start_byte() == ts_node.start_byte()
         && last_child.end_byte() == ts_node.end_byte()
-        && let Some((open, close)) = detect_delimiters(first_child, last_child, source)
+        && let Some((open, close)) = detect(first_child, last_child, source)
     {
         open.hash(hasher);
         close.hash(hasher);
@@ -556,6 +577,7 @@ fn infer_leaf_hint<'a>(
     source: &'a str,
     delimiters: &Delimiters<'a>,
     hasher: &mut std::hash::DefaultHasher,
+    classify: AtomClassifier,
 ) -> Option<SyntaxHint<'a>> {
     if descendant_count != 0 {
         return None;
@@ -568,41 +590,7 @@ fn infer_leaf_hint<'a>(
     )?;
 
     text.hash(hasher);
-
-    if text == "," || text == ";" || text == "." {
-        Some(SyntaxHint::Punctuation)
-    } else if ts_node.kind().contains("string") {
-        Some(SyntaxHint::String)
-    } else if ts_node.is_extra() {
-        Some(SyntaxHint::Comment(text))
-    } else {
-        None
-    }
-}
-
-fn detect_delimiters<'a>(
-    first_child: tree_sitter::Node<'_>,
-    last_child: tree_sitter::Node<'_>,
-    source: &'a str,
-) -> Option<(&'a str, &'a str)> {
-    if first_child.child_count() != 0 || last_child.child_count() != 0 {
-        return None;
-    }
-
-    let is_delimiter = |delimiter: &str| {
-        !delimiter.is_empty()
-            && delimiter.len() <= 2
-            && !delimiter.chars().any(char::is_alphanumeric)
-    };
-
-    let open = source.get(first_child.byte_range())?;
-    let close = source.get(last_child.byte_range())?;
-
-    if !is_delimiter(open) || !is_delimiter(close) {
-        return None;
-    }
-
-    Some((open, close))
+    classify(ts_node, text)
 }
 
 fn delimited_content_range(

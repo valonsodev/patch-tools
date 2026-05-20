@@ -12,6 +12,9 @@ mod search;
 mod syndiff;
 mod types;
 
+#[cfg(test)]
+mod morphe_gallery;
+
 use crate::cli::Cli;
 use clap::Parser;
 use std::process::ExitCode;

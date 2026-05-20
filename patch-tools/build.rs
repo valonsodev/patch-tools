@@ -1,5 +1,7 @@
 use std::{fs, path::PathBuf};
 
+const ENGINE_JAR_ZSTD_LEVEL: i32 = 6;
+
 fn main() {
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -36,7 +38,7 @@ fn main() {
     // zstd-compress the JAR into OUT_DIR; engine_jni decompresses in memory at startup.
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let jar_bytes = fs::read(&engine_jar).expect("failed to read embedded engine JAR");
-    let compressed_jar = zstd::encode_all(jar_bytes.as_slice(), 19)
+    let compressed_jar = zstd::encode_all(jar_bytes.as_slice(), ENGINE_JAR_ZSTD_LEVEL)
         .expect("failed to zstd-compress embedded engine JAR");
     let compressed_jar_path = out_dir.join("engine-all.jar.zst");
     fs::write(&compressed_jar_path, &compressed_jar)

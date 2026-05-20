@@ -1,19 +1,14 @@
-#![allow(dead_code)]
-
 use std::ops::Range;
 
+use self::languages::Language;
 use self::syntax_graph::{SyntaxEdge, SyntaxRoute};
-use self::syntax_tree::{BuildTreeOptions, SyntaxHint, SyntaxNode};
+use self::syntax_tree::{SyntaxHint, SyntaxNode, SyntaxTree};
 
+mod languages;
+mod syntax_defaults;
 mod syntax_delimiters;
 mod syntax_graph;
 mod syntax_tree;
-
-use self::syntax_tree::build_tree_with_options;
-#[allow(unused_imports)]
-pub use self::syntax_tree::{SyntaxTree, build_tree, build_tree_with_exclusions};
-const EXCLUDED_SMALI_NODE_TYPES: &[&str] = &["jmp_label", "label", "line_directive"];
-// const EXCLUDED_SMALI_NODE_TYPES: &[&str] = &["line_directive"];
 
 type ByteRange = Range<usize>;
 type DiffRanges = (Vec<ByteRange>, Vec<ByteRange>);
@@ -31,29 +26,29 @@ impl Default for SyntaxDiffOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SmaliSnippetKind {
-    Method,
-    ClassHeader,
-}
-
 pub fn diff_smali_snippets(
     lhs_source: &str,
     rhs_source: &str,
-    kind: SmaliSnippetKind,
     options: Option<SyntaxDiffOptions>,
 ) -> Option<DiffRanges> {
-    let (lhs_ranges, rhs_ranges) = match kind {
-        SmaliSnippetKind::Method => diff_smali_methods(lhs_source, rhs_source, options),
-        SmaliSnippetKind::ClassHeader => {
-            diff_smali_sources(lhs_source, rhs_source, None, None, options)
-        }
-    }?;
+    diff_with_language(Language::Smali, lhs_source, rhs_source, options)
+}
 
-    Some((
-        filter_ignored_smali_ranges(lhs_source, lhs_ranges),
-        filter_ignored_smali_ranges(rhs_source, rhs_ranges),
-    ))
+/// Re-export of the Smali "structural-only line" predicate so the rendering
+/// layer can tell `:cond_0` / `.line N` lines apart from real instructions
+/// when deciding which line-level Delete/Insert pairs are pure rename noise
+/// and which are part of a real structural change.
+pub fn is_smali_structural_only_line(line: &str) -> bool {
+    languages::smali::is_structural_only_line(line)
+}
+
+/// Re-export of the "label-rename pair" predicate: two non-identical
+/// smali lines that share the same label-stripped skeleton (different
+/// `:cond_NN`, `:try_end_NN`, `.line N` only). The rendering layer uses
+/// it to suppress the wall of Delete/Insert noise that appears after a
+/// patch shifts every bytecode offset in a method.
+pub fn smali_lines_are_label_rename(lhs: &str, rhs: &str) -> bool {
+    languages::smali::lines_are_label_rename(lhs, rhs)
 }
 
 pub fn diff_xml_snippets(
@@ -61,12 +56,25 @@ pub fn diff_xml_snippets(
     rhs_source: &str,
     options: Option<SyntaxDiffOptions>,
 ) -> Option<DiffRanges> {
-    let lhs_tree = parse_xml(lhs_source)?;
-    let rhs_tree = parse_xml(rhs_source)?;
-    diff_trees(&lhs_tree, &rhs_tree, None, None, options)
+    diff_with_language(Language::Xml, lhs_source, rhs_source, options)
 }
 
-pub fn diff_trees(
+fn diff_with_language(
+    lang: Language,
+    lhs_source: &str,
+    rhs_source: &str,
+    options: Option<SyntaxDiffOptions>,
+) -> Option<DiffRanges> {
+    let lhs_tree = languages::parse(lang, lhs_source)?;
+    let rhs_tree = languages::parse(lang, rhs_source)?;
+    let (lhs_ranges, rhs_ranges) = diff_trees(&lhs_tree, &rhs_tree, None, None, options)?;
+    Some((
+        languages::post_filter(lang, lhs_source, lhs_ranges),
+        languages::post_filter(lang, rhs_source, rhs_ranges),
+    ))
+}
+
+pub(crate) fn diff_trees(
     lhs_tree: &SyntaxTree,
     rhs_tree: &SyntaxTree,
     lhs_range: Option<&ByteRange>,
@@ -85,288 +93,6 @@ pub fn diff_trees(
     );
 
     Some((merge_ranges(lhs_ranges), merge_ranges(rhs_ranges)))
-}
-
-fn diff_smali_methods(
-    lhs_source: &str,
-    rhs_source: &str,
-    options: Option<SyntaxDiffOptions>,
-) -> Option<DiffRanges> {
-    diff_smali_sources(lhs_source, rhs_source, None, None, options)
-}
-
-fn diff_smali_sources(
-    lhs_source: &str,
-    rhs_source: &str,
-    lhs_range: Option<&ByteRange>,
-    rhs_range: Option<&ByteRange>,
-    options: Option<SyntaxDiffOptions>,
-) -> Option<DiffRanges> {
-    let lhs_tree = parse_smali(lhs_source)?;
-    let rhs_tree = parse_smali(rhs_source)?;
-    diff_trees(&lhs_tree, &rhs_tree, lhs_range, rhs_range, options)
-}
-
-fn filter_ignored_smali_ranges(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
-    if ranges.is_empty() {
-        return ranges;
-    }
-
-    let ignored_ranges = ignored_smali_ranges(source);
-    if ignored_ranges.is_empty() {
-        return ranges;
-    }
-
-    let mut filtered = Vec::new();
-
-    for range in ranges {
-        subtract_ignored_ranges(range, &ignored_ranges, &mut filtered);
-    }
-
-    merge_ranges(filtered)
-}
-
-fn subtract_ignored_ranges(
-    range: Range<usize>,
-    ignored_ranges: &[Range<usize>],
-    filtered: &mut Vec<Range<usize>>,
-) {
-    let mut cursor = range.start;
-
-    for ignored in ignored_ranges {
-        if ignored.end <= cursor {
-            continue;
-        }
-        if ignored.start >= range.end {
-            break;
-        }
-
-        if ignored.start > cursor {
-            filtered.push(cursor..ignored.start.min(range.end));
-        }
-
-        cursor = cursor.max(ignored.end.min(range.end));
-        if cursor >= range.end {
-            return;
-        }
-    }
-
-    if cursor < range.end {
-        filtered.push(cursor..range.end);
-    }
-}
-
-fn ignored_smali_ranges(source: &str) -> Vec<Range<usize>> {
-    let mut ignored = Vec::new();
-    let mut line_start = 0;
-
-    for line in source.split_inclusive('\n') {
-        let line_len = line.len();
-        let content_len = line.trim_end_matches(['\r', '\n']).len();
-        collect_ignored_smali_line_ranges(&line[..content_len], line_start, &mut ignored);
-        line_start += line_len;
-    }
-
-    merge_ranges(ignored)
-}
-
-fn collect_ignored_smali_line_ranges(
-    line: &str,
-    line_start: usize,
-    ignored: &mut Vec<Range<usize>>,
-) {
-    let trimmed_start = line
-        .bytes()
-        .position(|byte| byte != b' ' && byte != b'\t')
-        .unwrap_or(line.len());
-    let trimmed = &line[trimmed_start..];
-
-    if trimmed
-        .strip_prefix(".line")
-        .is_some_and(|rest| rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
-    {
-        ignored.push((line_start + trimmed_start)..(line_start + line.len()));
-        return;
-    }
-
-    if let Some(label_len) = leading_jmp_label_len(trimmed) {
-        ignored.push((line_start + trimmed_start)..(line_start + trimmed_start + label_len));
-    }
-
-    let bytes = trimmed.as_bytes();
-    let mut cursor = 0;
-    let mut in_string = false;
-    let mut escaped = false;
-
-    while cursor < bytes.len() {
-        let byte = bytes[cursor];
-
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == b'"' {
-                in_string = false;
-            }
-
-            cursor += 1;
-            continue;
-        }
-
-        if byte == b'"' {
-            in_string = true;
-            cursor += 1;
-            continue;
-        }
-
-        if byte == b'#' {
-            break;
-        }
-
-        if byte == b':' && (cursor == 0 || is_label_boundary(bytes[cursor - 1] as char)) {
-            let mut end = cursor + 1;
-            while end < bytes.len() && is_smali_label_char(bytes[end] as char) {
-                end += 1;
-            }
-
-            if end > cursor + 1 {
-                ignored.push(
-                    (line_start + trimmed_start + cursor)..(line_start + trimmed_start + end),
-                );
-                cursor = end;
-                continue;
-            }
-        }
-
-        cursor += 1;
-    }
-}
-
-fn leading_jmp_label_len(line: &str) -> Option<usize> {
-    let mut end = 0;
-    let mut chars = line.chars().peekable();
-
-    while let Some(&ch) = chars.peek() {
-        if !is_smali_label_char(ch) {
-            break;
-        }
-        end += ch.len_utf8();
-        chars.next();
-    }
-
-    if end == 0 || !line[end..].starts_with(':') {
-        return None;
-    }
-
-    Some(end + 1)
-}
-
-fn is_label_boundary(ch: char) -> bool {
-    ch.is_whitespace() || matches!(ch, '{' | '}' | '(' | ')' | ',' | '-' | '>')
-}
-
-fn is_smali_label_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | '-' | '.' | '<' | '>')
-}
-
-fn parse_smali(source: &str) -> Option<SyntaxTree<'_>> {
-    let mut parser = tree_sitter::Parser::new();
-    let language = tree_sitter_smali::LANGUAGE.into();
-    parser.set_language(&language).ok()?;
-
-    let tree = parser.parse(source, None)?;
-    if tree.root_node().has_error() {
-        return None;
-    }
-
-    Some(build_tree_with_options(
-        &tree.walk(),
-        source,
-        EXCLUDED_SMALI_NODE_TYPES,
-        // Keep nearby instruction nodes paired so narrower subtree diffs can mark only operands.
-        BuildTreeOptions::default().with_same_kind_replacements(true),
-    ))
-}
-
-fn parse_xml(source: &str) -> Option<SyntaxTree<'_>> {
-    let mut parser = tree_sitter::Parser::new();
-    let language = tree_sitter_xml::LANGUAGE_XML.into();
-    parser.set_language(&language).ok()?;
-
-    let tree = parser.parse(source, None)?;
-    if tree.root_node().has_error() {
-        return None;
-    }
-
-    Some(build_tree_with_options(
-        &tree.walk(),
-        source,
-        &[],
-        BuildTreeOptions::default()
-            .with_skip_node(skip_insignificant_xml_node)
-            .with_sort_children(sort_xml_children),
-    ))
-}
-
-fn skip_insignificant_xml_node(node: tree_sitter::Node<'_>, source: &str) -> bool {
-    node.kind() == "CharData"
-        && source
-            .get(node.byte_range())
-            .is_some_and(|text| text.trim().is_empty())
-}
-
-fn sort_xml_children(
-    parent: tree_sitter::Node<'_>,
-    source: &str,
-    children: &mut Vec<tree_sitter::Node<'_>>,
-) {
-    match parent.kind() {
-        "STag" | "EmptyElemTag" => {
-            children.sort_by(|lhs, rhs| compare_xml_tag_children(*lhs, *rhs, source));
-        }
-        _ => {}
-    }
-}
-
-fn compare_xml_tag_children(
-    lhs: tree_sitter::Node<'_>,
-    rhs: tree_sitter::Node<'_>,
-    source: &str,
-) -> std::cmp::Ordering {
-    xml_tag_child_sort_key(lhs, source).cmp(&xml_tag_child_sort_key(rhs, source))
-}
-
-fn xml_tag_child_sort_key<'a>(
-    node: tree_sitter::Node<'_>,
-    source: &'a str,
-) -> (u8, &'a str, usize) {
-    match node.kind() {
-        "Name" => (
-            0,
-            source.get(node.byte_range()).unwrap_or_default(),
-            node.start_byte(),
-        ),
-        "Attribute" => (
-            1,
-            xml_attribute_name(node, source).unwrap_or_default(),
-            node.start_byte(),
-        ),
-        _ => (
-            2,
-            source.get(node.byte_range()).unwrap_or_default(),
-            node.start_byte(),
-        ),
-    }
-}
-
-fn xml_attribute_name<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> Option<&'a str> {
-    (0..node.child_count()).find_map(|index| {
-        let child = node.child(u32::try_from(index).expect("child index overflow"))?;
-        (child.kind() == "Name")
-            .then(|| source.get(child.byte_range()))
-            .flatten()
-    })
 }
 
 fn collect_ranges(
@@ -411,8 +137,8 @@ fn collect_ranges(
                                 )
                             });
 
-                    if let Some((lhs_replace_ranges, rhs_replace_ranges)) = recurse
-                        .or_else(|| get_replace_ranges(lhs_node, rhs_node, lhs_bounds, rhs_bounds))
+                    if let Some((lhs_replace_ranges, rhs_replace_ranges)) =
+                        recurse.or_else(|| get_replace_ranges(lhs_node, rhs_node))
                     {
                         lhs_ranges.extend(lhs_replace_ranges);
                         rhs_ranges.extend(rhs_replace_ranges);
@@ -532,37 +258,23 @@ fn get_novel_ranges(
     ranges
 }
 
+/// When both replaced nodes are comments, suppress the per-comment highlight:
+/// returning `Some((empty, empty))` consumes the `Replaced` edge in
+/// `collect_ranges` and skips the `levenshtein_pct <= 20` novel-range
+/// fallback, so commented changes don't bleed onto the diff. Returns `None`
+/// for any other node-type pair so the caller can apply its fallback logic.
 fn get_replace_ranges(
     lhs_node: &SyntaxNode<'_>,
     rhs_node: &SyntaxNode<'_>,
-    lhs_bounds: Option<&ByteRange>,
-    rhs_bounds: Option<&ByteRange>,
 ) -> Option<DiffRanges> {
-    if let (Some(SyntaxHint::Comment(_)), Some(SyntaxHint::Comment(_))) =
-        (lhs_node.hint.as_ref(), rhs_node.hint.as_ref())
-    {
-        let lhs_offset = lhs_node.byte_range.start;
-        let rhs_offset = rhs_node.byte_range.start;
-
-        let lhs_ranges = Vec::<ByteRange>::new()
-            .into_iter()
-            .map(|range| (range.start + lhs_offset)..(range.end + lhs_offset))
-            .filter_map(|range| adjust_range_to_bounds(range, lhs_bounds))
-            .collect();
-
-        let rhs_ranges = Vec::<ByteRange>::new()
-            .into_iter()
-            .map(|range| (range.start + rhs_offset)..(range.end + rhs_offset))
-            .filter_map(|range| adjust_range_to_bounds(range, rhs_bounds))
-            .collect();
-
-        Some((lhs_ranges, rhs_ranges))
-    } else {
-        None
-    }
+    matches!(
+        (lhs_node.hint.as_ref(), rhs_node.hint.as_ref()),
+        (Some(SyntaxHint::Comment(_)), Some(SyntaxHint::Comment(_)))
+    )
+    .then(|| (Vec::new(), Vec::new()))
 }
 
-fn merge_ranges(mut ranges: Vec<ByteRange>) -> Vec<ByteRange> {
+pub(crate) fn merge_ranges(mut ranges: Vec<ByteRange>) -> Vec<ByteRange> {
     if ranges.is_empty() {
         return ranges;
     }

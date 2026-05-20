@@ -1,5 +1,5 @@
 #[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct SyntaxDelimiters {
+pub(crate) struct SyntaxDelimiters {
     lhs_depths: u128,
     rhs_depths: u128,
     both_depth: u8,
@@ -8,11 +8,11 @@ pub struct SyntaxDelimiters {
 impl SyntaxDelimiters {
     const LAYER_SIZE: u8 = 8;
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.both_depth == 0 && self.lhs_depths == 0 && self.rhs_depths == 0
     }
 
-    pub fn push_both(self) -> Self {
+    pub(crate) fn push_both(self) -> Self {
         Self {
             lhs_depths: self.lhs_depths,
             rhs_depths: self.rhs_depths,
@@ -20,7 +20,7 @@ impl SyntaxDelimiters {
         }
     }
 
-    pub fn push_lhs(self) -> Self {
+    pub(crate) fn push_lhs(self) -> Self {
         Self {
             lhs_depths: self.lhs_depths + self.shift(),
             rhs_depths: self.rhs_depths,
@@ -28,7 +28,7 @@ impl SyntaxDelimiters {
         }
     }
 
-    pub fn push_rhs(self) -> Self {
+    pub(crate) fn push_rhs(self) -> Self {
         Self {
             rhs_depths: self.rhs_depths + self.shift(),
             lhs_depths: self.lhs_depths,
@@ -36,7 +36,7 @@ impl SyntaxDelimiters {
         }
     }
 
-    pub fn pop_lhs(self) -> Option<Self> {
+    pub(crate) fn pop_lhs(self) -> Option<Self> {
         if self.lhs_depth() == 0 {
             return None;
         }
@@ -48,7 +48,7 @@ impl SyntaxDelimiters {
         })
     }
 
-    pub fn pop_rhs(self) -> Option<Self> {
+    pub(crate) fn pop_rhs(self) -> Option<Self> {
         if self.rhs_depth() == 0 {
             return None;
         }
@@ -60,7 +60,7 @@ impl SyntaxDelimiters {
         })
     }
 
-    pub fn pop_both(self) -> Option<Self> {
+    pub(crate) fn pop_both(self) -> Option<Self> {
         if self.both_depth == 0 || self.lhs_depth() != 0 || self.rhs_depth() != 0 {
             return None;
         }
@@ -72,11 +72,11 @@ impl SyntaxDelimiters {
         })
     }
 
-    pub fn can_pop_lhs(&self) -> bool {
+    pub(crate) fn can_pop_lhs(&self) -> bool {
         self.lhs_depth() > 0
     }
 
-    pub fn can_pop_rhs(&self) -> bool {
+    pub(crate) fn can_pop_rhs(&self) -> bool {
         self.rhs_depth() > 0
     }
 

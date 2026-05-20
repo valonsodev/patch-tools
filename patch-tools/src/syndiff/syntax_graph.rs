@@ -1,10 +1,9 @@
-use std::cell::{Cell, RefCell};
-use std::cmp::min;
+use std::cmp::{Ordering, min};
+use std::collections::BinaryHeap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
-use pathfinding::prelude::dijkstra;
-use rustc_hash::FxHashSet;
+use rustc_hash::FxHashMap;
 
 use super::syntax_delimiters::SyntaxDelimiters;
 use super::syntax_tree::{SyntaxHint, SyntaxTree, SyntaxTreeCursor};
@@ -12,14 +11,14 @@ use super::syntax_tree::{SyntaxHint, SyntaxTree, SyntaxTreeCursor};
 type Neighbours<'a> = heapless::Vec<(SyntaxEdge, SyntaxVertex<'a>), 8, u8>;
 
 #[derive(Debug, Clone)]
-pub struct SyntaxPath<'a> {
-    pub from: Option<SyntaxVertex<'a>>,
-    pub edge: Option<SyntaxEdge>,
-    pub into: SyntaxVertex<'a>,
-    pub cost: u32,
+pub(crate) struct SyntaxPath<'a> {
+    pub(crate) from: Option<SyntaxVertex<'a>>,
+    pub(crate) edge: Option<SyntaxEdge>,
+    pub(crate) into: SyntaxVertex<'a>,
+    pub(crate) cost: u32,
 }
 
-pub struct SyntaxRoute<'a>(pub Vec<SyntaxPath<'a>>);
+pub(crate) struct SyntaxRoute<'a>(pub(crate) Vec<SyntaxPath<'a>>);
 
 impl Debug for SyntaxRoute<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,14 +57,14 @@ impl Ord for SyntaxPath<'_> {
 }
 
 #[derive(Debug, Clone)]
-pub struct SyntaxVertex<'a> {
-    pub lhs: SyntaxTreeCursor<'a>,
-    pub rhs: SyntaxTreeCursor<'a>,
-    pub delimiters: SyntaxDelimiters,
+pub(crate) struct SyntaxVertex<'a> {
+    pub(crate) lhs: SyntaxTreeCursor<'a>,
+    pub(crate) rhs: SyntaxTreeCursor<'a>,
+    pub(crate) delimiters: SyntaxDelimiters,
 }
 
 impl<'a> SyntaxVertex<'a> {
-    pub fn new(
+    pub(crate) fn new(
         lhs: SyntaxTreeCursor<'a>,
         rhs: SyntaxTreeCursor<'a>,
         delimiters: SyntaxDelimiters,
@@ -77,11 +76,11 @@ impl<'a> SyntaxVertex<'a> {
         }
     }
 
-    pub fn is_end(&self) -> bool {
+    pub(crate) fn is_end(&self) -> bool {
         self.lhs.is_end() && self.rhs.is_end() && self.delimiters.is_empty()
     }
 
-    pub fn neighbours(&self) -> Neighbours<'a> {
+    pub(crate) fn neighbours(&self) -> Neighbours<'a> {
         let mut neighbours = heapless::Vec::new();
 
         self.push_paired_neighbours(&mut neighbours);
@@ -206,13 +205,6 @@ impl<'a> SyntaxVertex<'a> {
 
     fn can_pop_either(&self) -> bool {
         self.delimiters.can_pop_lhs() || self.delimiters.can_pop_rhs()
-    }
-
-    fn edge_to(&self, next: &SyntaxVertex<'a>) -> Option<SyntaxEdge> {
-        self.neighbours()
-            .into_iter()
-            .filter_map(|(edge, candidate)| (candidate == *next).then_some(edge))
-            .min_by_key(|edge| edge.cost())
     }
 }
 
@@ -357,7 +349,7 @@ impl Hash for SyntaxVertex<'_> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum SyntaxEdge {
+pub(crate) enum SyntaxEdge {
     Unchanged {
         depth_difference: u32,
         probably_punctuation: bool,
@@ -376,7 +368,40 @@ pub enum SyntaxEdge {
 }
 
 impl SyntaxEdge {
-    pub fn cost(self) -> u32 {
+    /// Cost weights for the shortest-path search. Lower = preferred.
+    ///
+    /// - **`Unchanged`** (`1..=40`): cheapest possible transition. Base grows
+    ///   linearly with depth difference up to a cap of 40, so a node matching
+    ///   its sibling costs ~1 but a node matching a deep nephew costs more.
+    ///   When the matched atom is mere punctuation (`,` / `;` / `.`) we add a
+    ///   200 penalty — without it the search happily chains punctuation
+    ///   matches over real content changes and produces nonsense diffs.
+    /// - **`EnterUnchangedDelimiter`** (`100..=140`): entering a matching
+    ///   delimited subtree (`{…}`, `(…)`). Costs more than a plain unchanged
+    ///   node because it commits to the delimiter pairing for the duration of
+    ///   that subtree.
+    /// - **`NovelAtomLHS` / `NovelAtomRHS` / `EnterNovelDelimiter{LHS,RHS}`**
+    ///   (300): single-sided insertions or deletions. The same cost for atoms
+    ///   and delimiter entries on a single side keeps the search neutral
+    ///   between flat and nested edit shapes.
+    /// - **`EnterNovelDelimiterBoth`** (550): both sides entered a different
+    ///   delimiter. Strictly worse than two single-sided Novels would be
+    ///   (`2 × 300 = 600`) — and that's intentional, but the slight discount
+    ///   below `2 × Novel` lets the search prefer it when the surrounding
+    ///   context is more consistent with paired-but-different delimiters than
+    ///   with two independent novels.
+    /// - **`Replaced`** (`500..=600`): same-kind replacement (e.g. Smali
+    ///   instruction with different operands, or comment with different text).
+    ///   Scales with Levenshtein similarity: identical text → 500, completely
+    ///   dissimilar → 600.
+    ///
+    /// Invariants to preserve when tuning:
+    /// - `Replaced` cost stays > single-sided `Novel` cost, otherwise the
+    ///   search prefers spurious renames over honest insert+delete pairs.
+    /// - Punctuation penalty (200) stays comfortably above the
+    ///   `Unchanged` base ceiling (40), otherwise the search uses punctuation
+    ///   matches to bridge unrelated content.
+    pub(crate) fn cost(self) -> u32 {
         match self {
             Self::Unchanged {
                 depth_difference,
@@ -442,7 +467,36 @@ fn pop_all_delimiters<'a>(
     (lhs, rhs, delimiters)
 }
 
-pub fn shortest_path<'a>(
+/// A `(cost, vertex)` pair in the priority queue. Ordered by `cost` only so
+/// that vertex types aren't required to be `Ord`; sorted as a min-heap by
+/// flipping the comparison.
+struct HeapEntry<'a> {
+    cost: u32,
+    vertex: SyntaxVertex<'a>,
+}
+
+impl PartialEq for HeapEntry<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cost == other.cost
+    }
+}
+
+impl Eq for HeapEntry<'_> {}
+
+impl PartialOrd for HeapEntry<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HeapEntry<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // BinaryHeap is a max-heap; reverse so smallest cost pops first.
+        other.cost.cmp(&self.cost)
+    }
+}
+
+pub(crate) fn shortest_path<'a>(
     lhs_tree: &'a SyntaxTree,
     rhs_tree: &'a SyntaxTree,
     graph_limit: usize,
@@ -450,67 +504,88 @@ pub fn shortest_path<'a>(
     shortest_path_from(lhs_tree.cursor(), rhs_tree.cursor(), graph_limit)
 }
 
-pub fn shortest_path_from<'a>(
+pub(crate) fn shortest_path_from<'a>(
     lhs_cursor: SyntaxTreeCursor<'a>,
     rhs_cursor: SyntaxTreeCursor<'a>,
     graph_limit: usize,
 ) -> Option<SyntaxRoute<'a>> {
-    let graph_limit = std::cmp::min(
+    let graph_limit = min(
         2 * lhs_cursor.tree().len() * rhs_cursor.tree().len(),
         graph_limit,
     );
 
     let start = SyntaxVertex::new(lhs_cursor, rhs_cursor, SyntaxDelimiters::default());
-    let visited = RefCell::new(FxHashSet::default());
-    let aborted = Cell::new(false);
-    let (vertices, _cost) = dijkstra(
-        &start,
-        |vertex| {
-            if aborted.get() {
-                return Vec::new();
+    let mut heap: BinaryHeap<HeapEntry<'a>> = BinaryHeap::new();
+    let mut dist: FxHashMap<SyntaxVertex<'a>, u32> = FxHashMap::default();
+    let mut parent: FxHashMap<SyntaxVertex<'a>, (SyntaxVertex<'a>, SyntaxEdge)> =
+        FxHashMap::default();
+
+    dist.insert(start.clone(), 0);
+    heap.push(HeapEntry {
+        cost: 0,
+        vertex: start.clone(),
+    });
+
+    while let Some(HeapEntry { cost, vertex }) = heap.pop() {
+        if vertex.is_end() {
+            return Some(SyntaxRoute(reconstruct_route(&parent, &start, vertex)));
+        }
+
+        // Skip stale heap entries (a shorter path to this vertex was found later).
+        if dist.get(&vertex).copied() != Some(cost) {
+            continue;
+        }
+
+        if dist.len() > graph_limit {
+            return None;
+        }
+
+        for (edge, next) in vertex.neighbours() {
+            let next_cost = cost + edge.cost();
+            let existing = dist.get(&next).copied().unwrap_or(u32::MAX);
+            if next_cost < existing {
+                dist.insert(next.clone(), next_cost);
+                parent.insert(next.clone(), (vertex.clone(), edge));
+                heap.push(HeapEntry {
+                    cost: next_cost,
+                    vertex: next,
+                });
             }
-
-            {
-                let mut visited = visited.borrow_mut();
-                if visited.insert(vertex.clone()) && visited.len() > graph_limit {
-                    aborted.set(true);
-                    return Vec::new();
-                }
-            }
-
-            vertex
-                .neighbours()
-                .into_iter()
-                .map(|(edge, next_vertex)| (next_vertex, edge.cost()))
-                .collect::<Vec<_>>()
-        },
-        SyntaxVertex::is_end,
-    )?;
-
-    if aborted.get() {
-        return None;
+        }
     }
 
-    Some(SyntaxRoute(reconstruct_route(&vertices)))
+    None
 }
 
-fn reconstruct_route<'a>(vertices: &[SyntaxVertex<'a>]) -> Vec<SyntaxPath<'a>> {
-    let mut route = Vec::with_capacity(vertices.len().saturating_sub(1));
-    let mut cost = 0;
+fn reconstruct_route<'a>(
+    parent: &FxHashMap<SyntaxVertex<'a>, (SyntaxVertex<'a>, SyntaxEdge)>,
+    start: &SyntaxVertex<'a>,
+    goal: SyntaxVertex<'a>,
+) -> Vec<SyntaxPath<'a>> {
+    // Walk parent links from goal back to start, collecting (vertex, edge_taken_to_reach_it).
+    let mut reverse_path: Vec<(SyntaxVertex<'a>, SyntaxEdge)> = Vec::new();
+    let mut current = goal;
+    while current != *start {
+        let Some((prev, edge)) = parent.get(&current) else {
+            break;
+        };
+        reverse_path.push((current.clone(), *edge));
+        current = prev.clone();
+    }
+    reverse_path.reverse();
 
-    for window in vertices.windows(2) {
-        let from = window[0].clone();
-        let into = window[1].clone();
-        let edge = from
-            .edge_to(&into)
-            .expect("shortest path should only contain valid syntax transitions");
-        cost += edge.cost();
+    let mut route = Vec::with_capacity(reverse_path.len());
+    let mut cumulative_cost = 0u32;
+    let mut from = start.clone();
+    for (into, edge) in reverse_path {
+        cumulative_cost += edge.cost();
         route.push(SyntaxPath {
             from: Some(from),
             edge: Some(edge),
-            into,
-            cost,
+            into: into.clone(),
+            cost: cumulative_cost,
         });
+        from = into;
     }
 
     route

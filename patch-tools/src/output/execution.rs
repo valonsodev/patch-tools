@@ -2,7 +2,6 @@
 //! script output.
 
 use crate::diff;
-use crate::syndiff::SmaliSnippetKind;
 use crate::types::{EngineEvent, EngineResult, engine_event, engine_result};
 use itertools::Itertools;
 use std::fmt::Write as _;
@@ -351,7 +350,6 @@ fn render_bytecode_diff(
             &diff_entry.original_smali,
             &diff_entry.modified_smali,
             3,
-            SmaliSnippetKind::Method,
             fmt.render_mode(),
         );
         if diff_text.is_empty() {
@@ -370,7 +368,6 @@ fn render_bytecode_diff(
             &diff_entry.original_header,
             &diff_entry.modified_header,
             3,
-            SmaliSnippetKind::ClassHeader,
             fmt.render_mode(),
         );
         if diff_text.is_empty() {

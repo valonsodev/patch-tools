@@ -3,7 +3,10 @@ use std::ops::Range;
 use std::path::Path;
 
 use crate::output::style;
-use crate::syndiff::{SmaliSnippetKind, diff_smali_snippets, diff_xml_snippets};
+use crate::syndiff::{
+    diff_smali_snippets, diff_xml_snippets, is_smali_structural_only_line,
+    smali_lines_are_label_rename,
+};
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use similar::{ChangeTag, TextDiff};
@@ -43,6 +46,19 @@ struct SemanticRenderOptions {
     show_line_numbers: bool,
     merge_mode: SegmentMergeMode,
     group_separator: Option<&'static str>,
+    /// Optional per-line classifier. A line for which this returns `true` is
+    /// treated as a *structural anchor* (Smali `:cond_0` / `.line 42`): a
+    /// lone Delete or Insert (no matching counterpart in the same change
+    /// block) is force-highlighted as a whole-line change instead of
+    /// rendering as silent plain text.
+    structural_only: Option<fn(&str) -> bool>,
+    /// Optional two-line predicate. When set, any Delete+Insert pair within
+    /// a contiguous change block for which this returns `true` is treated
+    /// as pure rebuild-noise — both sides go silent (cleared segments,
+    /// `active = false`). For Smali this captures the case where every
+    /// `:cond_NN` / `:try_end_NN` / `.line N` in a method shifted because
+    /// the patch inserted instructions at the top.
+    noise_pair: Option<fn(&str, &str) -> bool>,
 }
 
 /// Render diff lines as markdown with `{+added+}` / `[-removed-]` markers.
@@ -130,10 +146,9 @@ pub fn render_smali_diff(
     original: &str,
     modified: &str,
     context_lines: usize,
-    kind: SmaliSnippetKind,
     mode: RenderMode,
 ) -> String {
-    match diff_smali_snippets(original, modified, kind, None) {
+    match diff_smali_snippets(original, modified, None) {
         Some((original_ranges, modified_ranges)) => render_semantic_diff(
             original,
             modified,
@@ -145,6 +160,8 @@ pub fn render_smali_diff(
                 show_line_numbers: true,
                 merge_mode: SegmentMergeMode::Standard,
                 group_separator: None,
+                structural_only: Some(is_smali_structural_only_line),
+                noise_pair: Some(smali_lines_are_label_rename),
             },
         ),
         None => render_line_diff(original, modified, context_lines, mode, true),
@@ -179,6 +196,8 @@ fn render_xml_diff_inner(original: &str, modified: &str, mode: RenderMode) -> St
                     show_line_numbers: false,
                     merge_mode: SegmentMergeMode::Xml,
                     group_separator: Some("..."),
+                    structural_only: None,
+                    noise_pair: None,
                 },
             );
             let line = render_line_diff_with_separator(
@@ -562,7 +581,7 @@ fn render_semantic_diff(
     let modified_line_spans = line_spans(modified);
     let width = line_number_width(original, modified);
 
-    let semantic_lines: Vec<_> = diff
+    let mut semantic_lines: Vec<_> = diff
         .iter_all_changes()
         .map(|change| {
             let line = trim_line_terminator(change.value());
@@ -615,12 +634,19 @@ fn render_semantic_diff(
         })
         .collect();
 
+    apply_structural_fixup(
+        &mut semantic_lines,
+        options.structural_only,
+        options.noise_pair,
+    );
+
     let rendered_lines = collapse_semantic_replacements(
         &semantic_lines,
         options.mode,
         width,
         options.show_line_numbers,
         options.merge_mode,
+        options.structural_only,
     );
 
     let groups = active_change_groups(&rendered_lines, options.context_lines);
@@ -641,37 +667,132 @@ fn render_semantic_diff(
     out
 }
 
+/// Two-stage cleanup of Delete/Insert lines that aren't really part of the
+/// semantic change.
+///
+/// **Stage 1 — `noise_pair` (skeleton match within a change block).**
+/// `similar` splits any source-line difference into Delete+Insert, so a
+/// patch that shifts every bytecode offset in a method floods the diff
+/// with `:cond_NN`, `:try_end_NN`, `.line N` rename pairs and instructions
+/// whose only delta is the label they reference (`goto :goto_56` vs
+/// `goto :goto_58`). For each contiguous run of non-Equal lines we
+/// greedy-pair Deletes with Inserts whose label-stripped skeleton matches
+/// and silence both (cleared segments, `active = false`).
+///
+/// **Stage 2 — `structural_only` fallback.** A lone `:cond_0` Delete with
+/// no skeleton-matched partner (e.g. the Busuu fixture, where a whole
+/// early-return branch including the label is deleted outright) has no
+/// AST byte-ranges of its own, so it would otherwise render as silent
+/// plain text in the middle of a Delete cluster. We promote its whole
+/// content to a single segment so it shows up as a real `[-…-]` line.
+fn apply_structural_fixup(
+    semantic_lines: &mut [SemanticLine],
+    is_structural: Option<fn(&str) -> bool>,
+    noise_pair: Option<fn(&str, &str) -> bool>,
+) {
+    let mut paired = vec![false; semantic_lines.len()];
+
+    // Stage 1: skeleton-matched noise pairs, scoped to each change block.
+    if let Some(noise_pair) = noise_pair {
+        let mut index = 0;
+        while index < semantic_lines.len() {
+            if semantic_lines[index].tag == ChangeTag::Equal {
+                index += 1;
+                continue;
+            }
+
+            let start = index;
+            while index < semantic_lines.len()
+                && semantic_lines[index].tag != ChangeTag::Equal
+            {
+                index += 1;
+            }
+            let end = index;
+
+            // Greedy first-fit: each Delete claims the first unmatched
+            // Insert whose skeleton agrees with it.
+            for delete_idx in start..end {
+                if semantic_lines[delete_idx].tag != ChangeTag::Delete
+                    || paired[delete_idx]
+                {
+                    continue;
+                }
+                for insert_idx in start..end {
+                    if semantic_lines[insert_idx].tag != ChangeTag::Insert
+                        || paired[insert_idx]
+                    {
+                        continue;
+                    }
+                    if noise_pair(
+                        &semantic_lines[delete_idx].line,
+                        &semantic_lines[insert_idx].line,
+                    ) {
+                        paired[delete_idx] = true;
+                        paired[insert_idx] = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply silencing for paired noise lines and (stage 2) lone-line
+    // promotion for unpaired structural-only deletes / inserts.
+    for (index, line) in semantic_lines.iter_mut().enumerate() {
+        if !matches!(line.tag, ChangeTag::Delete | ChangeTag::Insert) {
+            continue;
+        }
+        if paired[index] {
+            line.segments.clear();
+            line.active = false;
+            continue;
+        }
+        let Some(is_structural) = is_structural else {
+            continue;
+        };
+        if !is_structural(&line.line) {
+            continue;
+        }
+        if line.segments.is_empty() {
+            let leading = line
+                .line
+                .bytes()
+                .position(|byte| byte != b' ' && byte != b'\t')
+                .unwrap_or(line.line.len());
+            if leading < line.line.len() {
+                line.segments.push(leading..line.line.len());
+                line.active = true;
+            }
+        }
+    }
+}
+
 fn collapse_semantic_replacements(
     lines: &[SemanticLine],
     mode: RenderMode,
     width: usize,
     show_line_numbers: bool,
     merge_mode: SegmentMergeMode,
+    structural_only: Option<fn(&str) -> bool>,
 ) -> Vec<RenderedLine> {
     let mut rendered = Vec::with_capacity(lines.len());
     let mut index = 0;
 
+    let _ = merge_mode;
+
     while index < lines.len() {
-        if merge_mode == SegmentMergeMode::Xml && lines[index].tag != ChangeTag::Equal {
+        if lines[index].tag != ChangeTag::Equal {
             let start = index;
             while index < lines.len() && lines[index].tag != ChangeTag::Equal {
                 index += 1;
             }
-            rendered.extend(collapse_xml_replacement_block(
+            rendered.extend(collapse_replacement_block(
                 &lines[start..index],
                 mode,
                 width,
                 show_line_numbers,
+                structural_only,
             ));
-            continue;
-        }
-
-        if let Some(next) = lines.get(index + 1)
-            && let Some(line) =
-                combine_semantic_replacement(&lines[index], next, mode, width, show_line_numbers)
-        {
-            rendered.push(line);
-            index += 2;
             continue;
         }
 
@@ -687,11 +808,20 @@ fn collapse_semantic_replacements(
     rendered
 }
 
-fn collapse_xml_replacement_block(
+/// Pair Delete/Insert lines within a contiguous non-Equal block by best
+/// inline match (not strictly by adjacency). This lets a `const-string v0,
+/// "[-free-]{+standard+}"` rename render inline even when a structural
+/// delete (`:cond_0`, `if-nez` …) sits between the two `const-string` lines
+/// in `similar`'s change stream. Originally written for XML attribute
+/// replacements where similar's line ordering interleaves attribute
+/// deletes and inserts; the algorithm is grammar-agnostic and we now use
+/// it for Smali too.
+fn collapse_replacement_block(
     lines: &[SemanticLine],
     mode: RenderMode,
     width: usize,
     show_line_numbers: bool,
+    structural_only: Option<fn(&str) -> bool>,
 ) -> Vec<RenderedLine> {
     let delete_indices: Vec<_> = lines
         .iter()
@@ -719,6 +849,9 @@ fn collapse_xml_replacement_block(
             .iter()
             .copied()
             .filter(|insert_index| !paired_inserts[*insert_index])
+            .filter(|insert_index| {
+                can_cross_pair(lines, delete_index, *insert_index, structural_only)
+            })
             .find_map(|insert_index| {
                 combine_semantic_replacement(
                     &lines[delete_index],
@@ -750,6 +883,41 @@ fn collapse_xml_replacement_block(
             Some(render_semantic_line(line, mode, width, show_line_numbers))
         })
         .collect()
+}
+
+/// Decide whether a Delete at `delete_index` may pair (inline-combine) with
+/// an Insert at `insert_index` despite intermediate lines sitting between
+/// them in `similar`'s change stream.
+///
+/// **Without** a `structural_only` classifier (XML mode), any intermediate
+/// content is allowed — XML attribute insertions and deletions routinely
+/// interleave with each other and the test suite depends on cross-line
+/// pairing there.
+///
+/// **With** a classifier (Smali mode), every strictly-intermediate line
+/// must be structural-only (`:cond_0`, `.line 42`). This prevents
+/// misleading "this register changed" inline pairings across long
+/// stretches of newly-inserted code — e.g. `return-object v0` at the top of
+/// the old method pairing with `return-object v1` at the bottom of a
+/// rewritten method, which produced jumbled line-number ordering in the
+/// gallery's Merriam-Webster fixture.
+fn can_cross_pair(
+    lines: &[SemanticLine],
+    delete_index: usize,
+    insert_index: usize,
+    structural_only: Option<fn(&str) -> bool>,
+) -> bool {
+    let Some(is_structural) = structural_only else {
+        return true;
+    };
+    let (low, high) = if delete_index < insert_index {
+        (delete_index, insert_index)
+    } else {
+        (insert_index, delete_index)
+    };
+    lines[low + 1..high]
+        .iter()
+        .all(|line| is_structural(&line.line))
 }
 
 fn render_semantic_line(
@@ -1158,6 +1326,210 @@ mod tests {
         assert_eq!(line_count_containing(&diff, "</application>"), 0, "{diff}");
         assert_eq!(line_count_containing(&diff, "</manifest>"), 0, "{diff}");
         assert_eq!(line_count_equal(&diff, "..."), 1, "{diff}");
+    }
+
+    #[test]
+    fn smali_pairs_across_structural_lines() {
+        // Busuu shape: structural-only `:cond_0` sits between the
+        // `const-string v0, "free"` Delete and the `const-string v0,
+        // "standard"` Insert. Should pair inline despite the intervening
+        // line.
+        let before = r#".method public getTier()Ljava/lang/String;
+    .registers 3
+    iget-object v0, p0, Lcom/busuu/Account;->tier:Ljava/lang/String;
+    if-nez v0, :cond_0
+    const-string v0, "free"
+    :cond_0
+    return-object v0
+.end method"#;
+        let after = r#".method public getTier()Ljava/lang/String;
+    .registers 3
+    const-string v0, "standard"
+    return-object v0
+.end method"#;
+        let md = super::render_smali_diff(before, after, 3, RenderMode::Markdown);
+        assert!(
+            md.contains(r#"const-string v0, "[-free-]{+standard+}""#),
+            "expected inline const-string pairing across :cond_0, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn smali_does_not_pair_across_unrelated_content() {
+        // Merriam-Webster shape: `return-object v0` at the top of the old
+        // body should NOT pair with `return-object v1` at the bottom of a
+        // much-longer rewritten body, because the seven inserts between
+        // them aren't structural anchors. Without this guard the line-
+        // number column jumped from 10 down to 3 and back up to 11.
+        let before = r".method public getSubscription()Lcom/merriamwebster/Subscription;
+    .registers 4
+    iget-object v0, p0, Lcom/merriamwebster/Account;->sub:Lcom/merriamwebster/Subscription;
+    return-object v0
+.end method";
+        let after = r#".method public getSubscription()Lcom/merriamwebster/Subscription;
+    .registers 4
+    new-instance v0, Ljava/util/Date;
+    const-wide v1, 0x7fffffffffffffffL
+    invoke-direct {v0, v1, v2}, Ljava/util/Date;-><init>(J)V
+    new-instance v1, Lcom/merriamwebster/Subscription;
+    const-string v2, ""
+    const/4 v3, 0x1
+    invoke-direct {v1, v2, v0, v2, v3}, Lcom/merriamwebster/Subscription;-><init>(Ljava/lang/String;Ljava/util/Date;Ljava/lang/String;Z)V
+    return-object v1
+.end method"#;
+        let md = super::render_smali_diff(before, after, 3, RenderMode::Markdown);
+
+        // The old bug: line-number column jumped 10 → 3 → 4 → … → 11 because
+        // the paired Delete was rendered at the Delete's position. Assert
+        // RHS line numbers (left of `|`) appear monotonically.
+        let rhs_numbers: Vec<usize> = md
+            .lines()
+            .filter_map(|line| {
+                let (prefix, _) = line.split_once('|')?;
+                prefix.trim().parse().ok()
+            })
+            .collect();
+        assert!(
+            rhs_numbers.windows(2).all(|w| w[0] < w[1]),
+            "RHS line numbers should be monotonically increasing, got {rhs_numbers:?} in:\n{md}"
+        );
+
+        // Sanity: both return-object lines appear, neither paired inline.
+        assert!(
+            md.contains("return-object [-v0-]"),
+            "expected deleted `v0` highlighted on the old return-object line, got:\n{md}"
+        );
+        assert!(
+            md.contains("return-object {+v1+}"),
+            "expected inserted `v1` highlighted on the new return-object line, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn smali_offset_shift_noise_is_collapsed_to_real_changes() {
+        // Real-world shape from rootbeer / navionics: a patch inserts two
+        // instructions at the top of a method, which shifts every
+        // bytecode offset in the rest of the body. `:cond_NN`,
+        // `:try_end_NN`, `.line N`, and instructions like
+        // `if-nez v0, :cond_NN` / `.catch … {:try_start_NN … :try_end_NN}
+        // :catch_NN` all rename in lockstep. The diff should display ONLY
+        // the inserted instructions; all the rename pairs should silence.
+        let before = r".method public g()Z
+    .registers 1
+    :try_start_0
+    invoke-static {}, Lit/navionics/nativelib/auth/SSOAuthController$LOGIN_STATUS;->getValue()I
+    move-result v0
+    :try_end_e
+    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_e} :catch_12
+    if-eqz v0, :cond_12
+    return v0
+    :catch_12
+    :cond_12
+    const/4 v0, 0x0
+    return v0
+.end method";
+        let after = r".method public g()Z
+    .registers 1
+    const/4 v0, 0x1
+    return v0
+    :try_start_2
+    invoke-static {}, Lit/navionics/nativelib/auth/SSOAuthController$LOGIN_STATUS;->getValue()I
+    move-result v0
+    :try_end_10
+    .catch Ljava/lang/Exception; {:try_start_2 .. :try_end_10} :catch_14
+    if-eqz v0, :cond_14
+    return v0
+    :catch_14
+    :cond_14
+    const/4 v0, 0x0
+    return v0
+.end method";
+        let md = super::render_smali_diff(before, after, 3, RenderMode::Markdown);
+
+        // The only "real" change is the two new instructions at the top.
+        // Every other line is rebuild noise (labels and offset numbers
+        // shifted, but the actual instructions, registers, and types are
+        // unchanged).
+        assert!(
+            md.contains("{+    const/4 v0, 0x1+}"),
+            "expected the genuine insertion to be highlighted, got:\n{md}"
+        );
+        assert!(
+            md.contains("{+    return v0+}"),
+            "expected the genuine insertion to be highlighted, got:\n{md}"
+        );
+
+        // No `[-…-]` Deletes anywhere — every Delete in this diff is a
+        // rename pair and should have been silenced.
+        assert!(
+            !md.contains("[-"),
+            "expected zero Delete markers (all changes are noise pairs), got:\n{md}"
+        );
+
+        // The only `{+…+}` Inserts should be the two genuine new lines.
+        // Anything else (a `{+:try_start_2+}`, `{+.catch …+}` etc.) means
+        // the rename pair wasn't recognized.
+        let insert_count = md.matches("{+").count();
+        assert_eq!(
+            insert_count, 2,
+            "expected exactly 2 inserts (const/4 + return v0), got {insert_count} in:\n{md}"
+        );
+    }
+
+    #[test]
+    fn smali_label_rename_is_suppressed() {
+        // Pure label rename (and `.line` renumbering) is pure noise — the
+        // assembler regenerates these on every rebuild. The diff should
+        // collapse to nothing.
+        let before = r#".method public foo()V
+    .registers 2
+    .line 5
+    if-nez v0, :cond_0
+    const-string v0, "x"
+    :cond_0
+    return-void
+.end method"#;
+        let after = r#".method public foo()V
+    .registers 2
+    .line 42
+    if-nez v0, :cond_99
+    const-string v0, "x"
+    :cond_99
+    return-void
+.end method"#;
+        let md = super::render_smali_diff(before, after, 3, RenderMode::Markdown);
+        assert!(
+            !md.contains("[-") && !md.contains("{+"),
+            "expected no diff markers for pure label/line rename, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn smali_unpaired_label_in_structural_delete_is_highlighted() {
+        // The standalone `:cond_0` line in a wholly-deleted branch should
+        // render as a marked deletion, not as silent context.
+        let before = r#".method public getTier()Ljava/lang/String;
+    .registers 3
+    iget-object v0, p0, Lcom/busuu/Account;->tier:Ljava/lang/String;
+    if-nez v0, :cond_0
+    const-string v0, "free"
+    :cond_0
+    return-object v0
+.end method"#;
+        let after = r#".method public getTier()Ljava/lang/String;
+    .registers 3
+    const-string v0, "standard"
+    return-object v0
+.end method"#;
+        let md = super::render_smali_diff(before, after, 3, RenderMode::Markdown);
+        assert!(
+            md.contains("[-:cond_0-]"),
+            "expected standalone :cond_0 to be highlighted, got:\n{md}"
+        );
+        assert!(
+            md.contains("[-    if-nez v0, :cond_0-]"),
+            "expected if-nez line including :cond_0 reference to highlight as a whole, got:\n{md}"
+        );
     }
 
     fn line_count_containing(text: &str, needle: &str) -> usize {
