@@ -47,10 +47,7 @@ fn compare_tag_children(
     tag_child_sort_key(lhs, source).cmp(&tag_child_sort_key(rhs, source))
 }
 
-fn tag_child_sort_key<'a>(
-    node: tree_sitter::Node<'_>,
-    source: &'a str,
-) -> (u8, &'a str, usize) {
+fn tag_child_sort_key<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> (u8, &'a str, usize) {
     match node.kind() {
         "Name" => (
             0,

@@ -3,9 +3,9 @@
 //! [`spawn_engine_worker`].
 
 use crate::engine_jni::EngineJni;
-use crate::types::{ApkIdentity, ApkStatus, ExecutionResultResponse, MethodInfoDto, MethodData};
 use crate::fingerprint::FingerprintIndex;
 use crate::search;
+use crate::types::{ApkIdentity, ApkStatus, ExecutionResultResponse, MethodData, MethodInfoDto};
 use anyhow::{Context, Result};
 use nucleo_matcher::Utf32String;
 use tokio::sync::{mpsc, oneshot};

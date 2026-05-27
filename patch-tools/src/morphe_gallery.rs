@@ -45,8 +45,8 @@ fn gallery() {
 
     for patch in PATCHES {
         if let Some(needle) = needle.as_deref() {
-            let hay = format!("{} {} {}", patch.section, patch.name, patch.file)
-                .to_ascii_lowercase();
+            let hay =
+                format!("{} {} {}", patch.section, patch.name, patch.file).to_ascii_lowercase();
             if !hay.contains(needle) {
                 continue;
             }

@@ -85,12 +85,7 @@ pub fn resolve_apk_selector(
 fn resolve_implicit_apk_selector(state: &StateView<'_>) -> std::result::Result<String, String> {
     match state.apks.len() {
         0 => Err("APK selector omitted, but no APKs are loaded".to_string()),
-        1 => Ok(state
-            .apks
-            .keys()
-            .next()
-            .expect("one APK exists")
-            .clone()),
+        1 => Ok(state.apks.keys().next().expect("one APK exists").clone()),
         _ => Err(format!(
             "APK selector is required when multiple APKs are loaded. Available apks: {}",
             available_apk_labels(state)

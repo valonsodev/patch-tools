@@ -1,18 +1,18 @@
 use super::engine_worker::{ApkData, EngineHandle, rayon_spawn, spawn_engine_worker};
 use super::resolver::{
-    apk_display_name, format_apk_not_found_error, resolve_apk_selector, resolve_class_id,
-    resolve_method_id, StateView,
+    StateView, apk_display_name, format_apk_not_found_error, resolve_apk_selector,
+    resolve_class_id, resolve_method_id,
 };
 use crate::daemon;
 use crate::fingerprint::ClassFingerprintCandidate;
+use crate::search;
 use crate::types::{
     ApkLoadedResponse, ApkStatus, ApkUnloadedResponse, ClassFingerprintCandidateDto,
     ClassFingerprintResultResponse, CommonFingerprintResultResponse, CommonFingerprintTargetDto,
-    DaemonRequest, DaemonResponse, FingerprintResultResponse, MatchedMethodDto, MethodFingerprintDto,
-    MethodInfoDto, MethodInfoList, MethodMapCandidateDto, MethodMapResponse, MethodSmaliResponse,
-    SearchResultResponse, StatusInfoResponse, daemon_request, daemon_response,
+    DaemonRequest, DaemonResponse, FingerprintResultResponse, MatchedMethodDto,
+    MethodFingerprintDto, MethodInfoDto, MethodInfoList, MethodMapCandidateDto, MethodMapResponse,
+    MethodSmaliResponse, SearchResultResponse, StatusInfoResponse, daemon_request, daemon_response,
 };
-use crate::search;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -265,14 +265,15 @@ async fn handle_generate_fingerprint(
     };
 
     match resolve_method_id(&apk, &generate.method_id) {
-        Some(unique_id) => match rayon_spawn(move || {
-            generate_fingerprint_response(&apk, &unique_id, limit)
-        })
-        .await
-        {
-            Ok(response) => response,
-            Err(error) => DaemonResponse::error(format!("fingerprint generation failed: {error:#}")),
-        },
+        Some(unique_id) => {
+            match rayon_spawn(move || generate_fingerprint_response(&apk, &unique_id, limit)).await
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    DaemonResponse::error(format!("fingerprint generation failed: {error:#}"))
+                }
+            }
+        }
         None => DaemonResponse::error(format!("Method not found: {}", generate.method_id)),
     }
 }

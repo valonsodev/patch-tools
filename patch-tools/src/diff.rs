@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::output::style;
 use crate::syndiff::{
-    diff_smali_snippets, diff_xml_snippets, is_smali_structural_only_line,
+    diff_smali_snippets, diff_xml_snippets, is_smali_line_directive, is_smali_structural_only_line,
     smali_lines_are_label_rename,
 };
 use quick_xml::Reader;
@@ -59,6 +59,9 @@ struct SemanticRenderOptions {
     /// `:cond_NN` / `:try_end_NN` / `.line N` in a method shifted because
     /// the patch inserted instructions at the top.
     noise_pair: Option<fn(&str, &str) -> bool>,
+    /// Optional per-line suppression hook. Smali uses this to drop `.line`
+    /// debug directives entirely from rendered diffs.
+    suppress_line: Option<fn(&str) -> bool>,
 }
 
 /// Render diff lines as markdown with `{+added+}` / `[-removed-]` markers.
@@ -162,6 +165,7 @@ pub fn render_smali_diff(
                 group_separator: None,
                 structural_only: Some(is_smali_structural_only_line),
                 noise_pair: Some(smali_lines_are_label_rename),
+                suppress_line: Some(is_smali_line_directive),
             },
         ),
         None => render_line_diff(original, modified, context_lines, mode, true),
@@ -198,6 +202,7 @@ fn render_xml_diff_inner(original: &str, modified: &str, mode: RenderMode) -> St
                     group_separator: Some("..."),
                     structural_only: None,
                     noise_pair: None,
+                    suppress_line: None,
                 },
             );
             let line = render_line_diff_with_separator(
@@ -640,6 +645,10 @@ fn render_semantic_diff(
         options.noise_pair,
     );
 
+    if let Some(suppress_line) = options.suppress_line {
+        semantic_lines.retain(|line| !suppress_line(&line.line));
+    }
+
     let rendered_lines = collapse_semantic_replacements(
         &semantic_lines,
         options.mode,
@@ -702,9 +711,7 @@ fn apply_structural_fixup(
             }
 
             let start = index;
-            while index < semantic_lines.len()
-                && semantic_lines[index].tag != ChangeTag::Equal
-            {
+            while index < semantic_lines.len() && semantic_lines[index].tag != ChangeTag::Equal {
                 index += 1;
             }
             let end = index;
@@ -712,15 +719,11 @@ fn apply_structural_fixup(
             // Greedy first-fit: each Delete claims the first unmatched
             // Insert whose skeleton agrees with it.
             for delete_idx in start..end {
-                if semantic_lines[delete_idx].tag != ChangeTag::Delete
-                    || paired[delete_idx]
-                {
+                if semantic_lines[delete_idx].tag != ChangeTag::Delete || paired[delete_idx] {
                     continue;
                 }
                 for insert_idx in start..end {
-                    if semantic_lines[insert_idx].tag != ChangeTag::Insert
-                        || paired[insert_idx]
-                    {
+                    if semantic_lines[insert_idx].tag != ChangeTag::Insert || paired[insert_idx] {
                         continue;
                     }
                     if noise_pair(

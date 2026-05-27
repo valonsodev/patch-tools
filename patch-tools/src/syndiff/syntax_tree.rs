@@ -337,10 +337,7 @@ impl BuildTreeOptions {
     }
 
     #[inline]
-    pub(crate) const fn with_excluded_node_types(
-        mut self,
-        types: &'static [&'static str],
-    ) -> Self {
+    pub(crate) const fn with_excluded_node_types(mut self, types: &'static [&'static str]) -> Self {
         self.excluded_node_types = types;
         self
     }
@@ -353,10 +350,7 @@ impl BuildTreeOptions {
     /// splits into per-segment children, producing noisy per-segment diff
     /// markers when only the path changes.
     #[inline]
-    pub(crate) const fn with_atomic_node_types(
-        mut self,
-        types: &'static [&'static str],
-    ) -> Self {
+    pub(crate) const fn with_atomic_node_types(mut self, types: &'static [&'static str]) -> Self {
         self.atomic_node_types = types;
         self
     }
@@ -466,7 +460,8 @@ fn build_tree_recursive<'a>(
         return Some(this_id);
     }
 
-    let (delimiters, _) = detect_node_delimiters(ts_node, source, &mut hasher, options.detect_delimiters);
+    let (delimiters, _) =
+        detect_node_delimiters(ts_node, source, &mut hasher, options.detect_delimiters);
     let mut descendant_count = 0;
 
     let mut children = collect_child_nodes(ts_node, source, &delimiters, options);
@@ -475,13 +470,7 @@ fn build_tree_recursive<'a>(
     }
 
     for child in children {
-        let child_id = build_tree_recursive(
-            child,
-            nodes,
-            Some(this_id),
-            source,
-            options,
-        );
+        let child_id = build_tree_recursive(child, nodes, Some(this_id), source, options);
 
         if let Some(child_id) = child_id {
             let child_node = &nodes[child_id.index()];

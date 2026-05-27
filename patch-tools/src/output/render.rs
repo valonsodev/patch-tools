@@ -372,4 +372,3 @@ fn render_method_smali(
         stdout_only(format!("{smali}\n"))
     }
 }
-

@@ -63,7 +63,10 @@ pub enum Commands {
     /// Create main.kts and AGENTS.md in the current directory
     Scaffold,
     /// Generate fingerprints for a method
-    #[command(override_usage = "patch-tools fingerprint [OPTIONS] [APK] <METHOD_ID>")]
+    #[command(
+        override_usage = "patch-tools fingerprint [OPTIONS] [APK] <METHOD_ID>",
+        after_help = "METHOD_ID is usually the smali unique_id, for example:\n  Lcom/example/Foo;->bar(I)Ljava/lang/String;"
+    )]
     Fingerprint {
         /// Method selector, or APK selector followed by method selector
         #[arg(required = true, value_name = "APK_OR_METHOD_ID", num_args = 1..=2)]

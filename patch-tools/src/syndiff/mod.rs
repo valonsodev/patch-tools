@@ -42,6 +42,12 @@ pub fn is_smali_structural_only_line(line: &str) -> bool {
     languages::smali::is_structural_only_line(line)
 }
 
+/// Re-export of the Smali debug line directive predicate. These directives
+/// are regenerated from debug metadata and are not useful in rendered diffs.
+pub fn is_smali_line_directive(line: &str) -> bool {
+    languages::smali::is_line_directive(line)
+}
+
 /// Re-export of the "label-rename pair" predicate: two non-identical
 /// smali lines that share the same label-stripped skeleton (different
 /// `:cond_NN`, `:try_end_NN`, `.line N` only). The rendering layer uses
@@ -263,10 +269,7 @@ fn get_novel_ranges(
 /// `collect_ranges` and skips the `levenshtein_pct <= 20` novel-range
 /// fallback, so commented changes don't bleed onto the diff. Returns `None`
 /// for any other node-type pair so the caller can apply its fallback logic.
-fn get_replace_ranges(
-    lhs_node: &SyntaxNode<'_>,
-    rhs_node: &SyntaxNode<'_>,
-) -> Option<DiffRanges> {
+fn get_replace_ranges(lhs_node: &SyntaxNode<'_>, rhs_node: &SyntaxNode<'_>) -> Option<DiffRanges> {
     matches!(
         (lhs_node.hint.as_ref(), rhs_node.hint.as_ref()),
         (Some(SyntaxHint::Comment(_)), Some(SyntaxHint::Comment(_)))

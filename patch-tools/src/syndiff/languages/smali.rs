@@ -66,10 +66,7 @@ pub(crate) fn post_filter(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<
 ///
 /// Same-opcode operand changes (e.g. only the field name differs) leave the
 /// opcode token outside the diff range, so this is a no-op for them.
-fn promote_opcode_change_lines(
-    source: &str,
-    ranges: Vec<Range<usize>>,
-) -> Vec<Range<usize>> {
+fn promote_opcode_change_lines(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.is_empty() {
         return ranges;
     }
@@ -130,8 +127,8 @@ fn promote_opcode_change_lines(
                     output.push(content_range.clone());
                 }
             } else {
-                let clipped = range.start.max(content_range.start)
-                    ..range.end.min(content_range.end);
+                let clipped =
+                    range.start.max(content_range.start)..range.end.min(content_range.end);
                 if clipped.start < clipped.end {
                     output.push(clipped);
                 }
@@ -162,6 +159,13 @@ pub(crate) fn is_structural_only_line(line: &str) -> bool {
     }
 
     false
+}
+
+pub(crate) fn is_line_directive(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed
+        .strip_prefix(".line")
+        .is_some_and(|rest| rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
 }
 
 /// Whether two non-identical smali source lines differ *only* in label
@@ -288,10 +292,7 @@ fn opcode_byte_range(line: &str, line_start: usize) -> Option<Range<usize>> {
 /// names on instructions, and trailing `# comment` regions. Operates on the
 /// raw source text by line rather than on the tree-sitter parse, because the
 /// grammar doesn't always surface these positions as discrete nodes.
-pub(crate) fn filter_ignored_ranges(
-    source: &str,
-    ranges: Vec<Range<usize>>,
-) -> Vec<Range<usize>> {
+pub(crate) fn filter_ignored_ranges(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.is_empty() {
         return ranges;
     }
@@ -354,11 +355,7 @@ fn ignored_ranges(source: &str) -> Vec<Range<usize>> {
     merge_ranges(ignored)
 }
 
-fn collect_ignored_line_ranges(
-    line: &str,
-    line_start: usize,
-    ignored: &mut Vec<Range<usize>>,
-) {
+fn collect_ignored_line_ranges(line: &str, line_start: usize, ignored: &mut Vec<Range<usize>>) {
     let trimmed_start = line
         .bytes()
         .position(|byte| byte != b' ' && byte != b'\t')

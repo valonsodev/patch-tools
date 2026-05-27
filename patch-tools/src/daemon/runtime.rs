@@ -132,9 +132,7 @@ pub fn scaffold_scripts() -> Result<()> {
 
     println!("Created {}", main_path.display());
     println!("Created {}", agents_path.display());
-    println!(
-        "Edit main.kts and run `patch-tools run main.kts` when the daemon has an APK loaded."
-    );
+    println!("Edit main.kts and run `patch-tools run main.kts` when the daemon has an APK loaded.");
 
     Ok(())
 }
