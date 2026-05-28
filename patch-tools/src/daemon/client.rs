@@ -1,14 +1,17 @@
 use crate::daemon;
 use crate::types::{CommonFingerprintTargetSelector, DaemonRequest, DaemonResponse};
 use anyhow::{Context, Result};
+use interprocess::local_socket::{
+    GenericFilePath, ToFsName,
+    tokio::{RecvHalf, SendHalf, Stream, prelude::*},
+};
 use std::path::Path;
 use tokio::io::BufReader;
-use tokio::net::UnixStream;
 
-/// Thin Unix socket client that connects to the morphe-daemon.
+/// Thin local-socket client that connects to the morphe-daemon.
 pub struct DaemonClient {
-    reader: BufReader<tokio::net::unix::OwnedReadHalf>,
-    writer: tokio::net::unix::OwnedWriteHalf,
+    reader: BufReader<RecvHalf>,
+    writer: SendHalf,
 }
 
 /// Generate an async client method that forwards to `DaemonRequest::$req(...)` via `self.send`.
@@ -22,14 +25,22 @@ macro_rules! client_method {
 
 impl DaemonClient {
     pub async fn connect(socket_path: &Path) -> Result<Self> {
-        let stream = UnixStream::connect(socket_path).await.with_context(|| {
+        let name = socket_path
+            .to_fs_name::<GenericFilePath>()
+            .with_context(|| {
+                format!(
+                    "failed to convert socket path to local-socket name: {}",
+                    socket_path.display(),
+                )
+            })?;
+        let stream = Stream::connect(name).await.with_context(|| {
             format!(
                 "failed to connect to daemon at {}. Is it running?",
                 socket_path.display(),
             )
         })?;
 
-        let (reader, writer) = stream.into_split();
+        let (reader, writer) = stream.split();
         Ok(Self {
             reader: BufReader::new(reader),
             writer,
