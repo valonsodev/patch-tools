@@ -10,12 +10,11 @@ use prost::Message;
 use std::io::Write;
 use tempfile::{Builder, NamedTempFile};
 
-/// zstd-compressed engine JAR. Decompressed at startup in-memory and written
-/// to a tempfile so the JVM can load it via the classpath option (`HotSpot` needs
-/// a real path; URLClassLoader-from-bytes would require Java-side glue).
+/// Decompressed at startup and written to a tempfile so the JVM can load it
+/// via classpath — `HotSpot` needs a real path and `URLClassLoader`-from-
+/// bytes would require Java-side glue.
 const ENGINE_JAR_ZST: &[u8] = include_bytes!(env!("MORPHE_ENGINE_JAR_ZST"));
 
-/// Rust wrapper around the Kotlin `JniFacade`.
 pub struct EngineJni {
     jvm: JavaVM,
     facade: Global<JObject<'static>>,
@@ -98,8 +97,6 @@ impl EngineJni {
         })
     }
 
-    // -- APK lifecycle --------------------------------------------------------
-
     pub fn load_apk(&self, path: &str) -> Result<Option<ApkIdentity>> {
         match self.call_bytes_method_1("loadApkProto", path)? {
             Some(bytes) => Ok(Some(decode_message(
@@ -133,8 +130,6 @@ impl EngineJni {
         decode_message(bytes.as_slice(), "deserialize apk status")
     }
 
-    // -- Method info ----------------------------------------------------------
-
     pub fn get_method_smali(&self, apk_id: &str, method_id: &str) -> Result<Option<String>> {
         self.jvm
             .attach_current_thread(|env| -> Result<Option<String>> {
@@ -163,8 +158,6 @@ impl EngineJni {
             .context("attach")
     }
 
-    // -- Bulk method data export ----------------------------------------------
-
     pub fn get_apk_method_data(&self, apk_id: &str) -> Result<Vec<MethodData>> {
         let bytes = self
             .call_bytes_method_1("getApkMethodDataProto", apk_id)?
@@ -174,8 +167,6 @@ impl EngineJni {
         validate_method_data(&method_data.items)?;
         Ok(method_data.items)
     }
-
-    // -- Script execution -----------------------------------------------------
 
     pub fn evaluate_script(
         &self,
@@ -207,9 +198,6 @@ impl EngineJni {
             .context("attach")
     }
 
-    // -- Helpers --------------------------------------------------------------
-
-    /// Call a `JniFacade` method that takes one String and returns a nullable byte array.
     fn call_bytes_method_1(&self, method: &str, arg: &str) -> Result<Option<Vec<u8>>> {
         self.jvm
             .attach_current_thread(|env| -> Result<Option<Vec<u8>>> {

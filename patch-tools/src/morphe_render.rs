@@ -3,12 +3,10 @@ use std::fmt::Write as _;
 use crate::access_flags::DexAccessFlag;
 use crate::types::{InstructionFeature, MethodFingerprintDto, instruction_feature};
 
-/// Render a `MethodFingerprintDto` as a Morphe Fingerprint(...) Kotlin constructor call.
 pub fn to_morphe_code_string(fp: &MethodFingerprintDto) -> String {
     render_fingerprint(&fingerprint_parts(fp))
 }
 
-/// Render a method fingerprint that scopes itself to a previously matched class fingerprint.
 pub fn to_morphe_code_string_with_class_fingerprint(
     fp: &MethodFingerprintDto,
     class_fingerprint: &MethodFingerprintDto,
@@ -20,7 +18,6 @@ pub fn to_morphe_code_string_with_class_fingerprint(
     render_fingerprint(&parts)
 }
 
-/// Render a fallback Fingerprint(...) that only pins class and method name.
 pub fn to_morphe_name_only_fingerprint_string(defining_class: &str, method_name: &str) -> String {
     format!(
         "Fingerprint(\n\tdefiningClass = {},\n\tname = {}\n)",
@@ -83,7 +80,7 @@ fn render_instruction_filter(instr: &InstructionFeature) -> String {
 fn fingerprint_parts(fp: &MethodFingerprintDto) -> Vec<String> {
     let mut parts: Vec<String> = Vec::new();
 
-    // Return type — omit for constructors (Morphe normalizes V away)
+    // Morphe normalizes constructor return type V away — omit it.
     let is_constructor = fp
         .access_flags
         .is_some_and(|flags| DexAccessFlag::Constructor.is_set(flags));
@@ -93,7 +90,6 @@ fn fingerprint_parts(fp: &MethodFingerprintDto) -> Vec<String> {
         parts.push(format!("returnType = {}", kotlin_string(rt)));
     }
 
-    // Access flags
     if let Some(flags) = fp.access_flags {
         let flag_strs: Vec<String> = DexAccessFlag::ALL
             .iter()
@@ -105,7 +101,6 @@ fn fingerprint_parts(fp: &MethodFingerprintDto) -> Vec<String> {
         }
     }
 
-    // Parameters
     if let Some(params) = fp.parameter_values() {
         if params.is_empty() {
             parts.push("parameters = listOf()".to_string());
@@ -119,7 +114,6 @@ fn fingerprint_parts(fp: &MethodFingerprintDto) -> Vec<String> {
         }
     }
 
-    // Instruction filters
     if !fp.instructions.is_empty() {
         let filter_strs: Vec<String> = fp
             .instructions

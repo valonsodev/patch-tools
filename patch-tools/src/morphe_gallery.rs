@@ -1,29 +1,11 @@
-// Pedantic clippy is on globally; this gallery file is a visual fixture
-// where neither lint earns its keep — proper-noun app names aren't Rust
-// code identifiers, and `r#""#` is the right shape for smali snippets that
-// commonly contain `"` characters (string constants).
 #![allow(clippy::doc_markdown, clippy::needless_raw_string_hashes)]
 
-//! Visual gallery of smali patches from `morphe_patches.md`, rendered through
-//! `diff::render_smali_diff` for visual inspection of the highlighter.
-//!
-//! Not a real test — it never asserts anything; it exists purely to dump a
-//! gallery of `before` / `after` smali pairs into stdout where the operator
-//! can eyeball them. Compiled only under `#[cfg(test)]`, so it never ships
-//! in the release binary.
+//! Visual gallery of fabricated smali snippets rendered through
+//! `diff::render_smali_diff`, for eyeballing the highlighter. Asserts
+//! nothing; the snippets exercise patch shapes from `morphe_patches.md`.
 //!
 //! Run:    `cargo test gallery -- --nocapture`
 //! Filter: `FILTER=adguard cargo test gallery -- --nocapture`
-//!
-//! The `before`/`after` snippets are **fabricated** — the patch document
-//! only describes operations at a high level, so each pair is plausible smali
-//! that exercises one of the document's patch shapes (early-return, insert-at-0,
-//! iput-before-return, replace-instruction, conditional-block, etc.). The point
-//! is to look at how the diff renderer behaves on these shapes, not to mirror
-//! any specific APK's bytecode.
-//!
-//! Native/hex patches (HelloChinese libalg, IbisPaint libibispaint, Lingory
-//! libapp, TTMIK Hermes bundle) are skipped — they're not smali.
 
 use crate::diff::{RenderMode, render_smali_diff};
 use crate::output::style;

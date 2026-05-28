@@ -36,43 +36,26 @@ pub(crate) fn parse(source: &str) -> Option<SyntaxTree<'_>> {
     ))
 }
 
-/// Smali post-processing pipeline for the byte ranges produced by the AST
-/// diff.
-///
-/// **Order matters.** Stripping runs first to remove label/`.line`/comment
-/// byte ranges from any AST-derived ranges that happened to span them
-/// (these are noise — labels and source-line numbers regenerate every
-/// rebuild). Promotion runs second so that an opcode-change line, which
-/// gets expanded to a full-line range, still highlights the labels embedded
-/// within it: when the whole line is being deleted the label IS part of the
-/// deletion and showing it un-highlighted (as the old ordering did) reads
-/// as if the label were unchanged context.
+/// Strip first, then promote: if promotion ran first, an opcode-change
+/// full-line range would re-expose the label byte-ranges that stripping was
+/// meant to remove, and they'd render as unchanged context inside an
+/// otherwise-deleted line.
 pub(crate) fn post_filter(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     let stripped = filter_ignored_ranges(source, ranges);
     promote_opcode_change_lines(source, stripped)
 }
 
-/// When a diff range touches the opcode token of a line (the first
-/// whitespace-delimited word after any leading `:label`), expand every range
-/// on that line to cover the entire line content.
-///
-/// Why: an opcode change (e.g. `iget-boolean ...` → `const/4 ...`) leaves
-/// some atoms identical between the two instructions (typically the first
-/// register, `v0,`), which the renderer's `combine_semantic_replacement`
-/// then uses as common context to interleave the two lines inline. Different
-/// opcodes have different operand structures, so inline interleaving is
-/// nonsense — promoting to a full-line range removes the shared context and
-/// makes the renderer emit two separate delete/insert lines.
-///
-/// Same-opcode operand changes (e.g. only the field name differs) leave the
-/// opcode token outside the diff range, so this is a no-op for them.
+/// When the diff touches a line's opcode token, expand every range on that
+/// line to cover the full line content. Different opcodes have different
+/// operand shapes (e.g. `iget-boolean` → `const/4`), so the otherwise-
+/// matching common atoms (`v0,`) would mislead `combine_semantic_replacement`
+/// into interleaving the lines inline. Same-opcode operand changes don't
+/// touch the opcode token and are unaffected.
 fn promote_opcode_change_lines(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.is_empty() {
         return ranges;
     }
 
-    // Group input ranges by their first touched line and accumulate
-    // per-line promotion decisions.
     let mut line_starts: Vec<(usize, Range<usize>, Option<Range<usize>>)> = Vec::new();
     let mut cursor = 0;
     for line in source.split_inclusive('\n') {
@@ -107,9 +90,6 @@ fn promote_opcode_change_lines(source: &str, ranges: Vec<Range<usize>>) -> Vec<R
         return ranges;
     }
 
-    // Bucket each range piece into the line it falls on. For promoted lines,
-    // emit the full content range once; for unpromoted lines, keep the
-    // original piece. Multi-line input ranges are split at line boundaries.
     let mut emitted_full_line: Vec<bool> = vec![false; line_starts.len()];
     let mut output: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
 
@@ -139,11 +119,9 @@ fn promote_opcode_change_lines(source: &str, ranges: Vec<Range<usize>>) -> Vec<R
     merge_ranges(output)
 }
 
-/// Whether a smali source line, ignoring surrounding whitespace, consists
-/// only of a label declaration (`:cond_0`) or a `.line` directive
-/// (`.line 42`). These are structural anchors the assembler regenerates on
-/// every rebuild — useful as signal when the surrounding code is changing,
-/// pure noise when paired with a matching rename on the other side.
+/// True for lines consisting only of a `:label` declaration or `.line N`
+/// directive — assembler-regenerated structural anchors that pair as
+/// rebuild noise but signal real change when unpaired.
 pub(crate) fn is_structural_only_line(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -168,35 +146,20 @@ pub(crate) fn is_line_directive(line: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
 }
 
-/// Whether two non-identical smali source lines differ *only* in label
-/// names and `.line` numbers — i.e. they share the same "instruction
-/// skeleton" once labels are masked. This is the signature of rebuild
-/// noise: every label and `.line` number in a method shifts when bytecode
-/// offsets change (insertion at the top of a method renumbers every label
-/// below it), but the actual instructions, registers and types are
-/// untouched.
-///
-/// Used by the rendering layer to fold Delete/Insert pairs of this shape
-/// into silent context so the visible diff only contains real changes.
+/// True if two non-identical smali lines share the same label-stripped
+/// skeleton — the rebuild-noise signature when bytecode-offset changes
+/// renumber every label below without touching real instructions.
 pub(crate) fn lines_are_label_rename(lhs: &str, rhs: &str) -> bool {
     if lhs == rhs {
-        // Identical lines aren't emitted as Delete+Insert by `similar`; if
-        // they were, they're not a rename either.
         return false;
     }
     label_free_skeleton(lhs) == label_free_skeleton(rhs)
 }
 
-/// Build a "label-free skeleton" of a smali line: replace every `:label`
-/// reference and every `.line N` number with a fixed placeholder so two
-/// lines that differ only in those positions become byte-identical.
-///
-/// The label-colon detection mirrors [`is_label_boundary`] /
-/// [`is_label_char`] so it agrees with what
-/// [`collect_ignored_line_ranges`] strips from the AST byte ranges: a
-/// label colon must sit at line-start or follow `{ } ( ) , - >` /
-/// whitespace, so type-separator colons inside `field:Ltype;` or method
-/// signature `name:type` patterns aren't touched.
+/// Label-colon detection must mirror [`is_label_boundary`] /
+/// [`is_label_char`] so this stays in sync with what
+/// [`collect_ignored_line_ranges`] strips from AST ranges — otherwise the
+/// type-separator colon in `field:Ltype;` would be mistaken for a label.
 fn label_free_skeleton(line: &str) -> String {
     let bytes = line.as_bytes();
     let trimmed_start = bytes
@@ -204,7 +167,6 @@ fn label_free_skeleton(line: &str) -> String {
         .position(|byte| *byte != b' ' && *byte != b'\t')
         .unwrap_or(bytes.len());
 
-    // `.line N` directives: collapse the changing line number.
     if line.len() >= trimmed_start + 5
         && &line[trimmed_start..trimmed_start + 5] == ".line"
         && (line.len() == trimmed_start + 5
@@ -218,7 +180,6 @@ fn label_free_skeleton(line: &str) -> String {
 
     let mut out = String::with_capacity(line.len());
     let mut cursor = 0;
-
     while cursor < bytes.len() {
         let byte = bytes[cursor];
         let is_label_start = byte == b':'
@@ -242,13 +203,8 @@ fn label_free_skeleton(line: &str) -> String {
     out
 }
 
-/// Locate the opcode token within a single smali source line. Returns the
-/// absolute byte range of the opcode in the original source.
-///
-/// Strategy: skip leading whitespace, skip an optional `:label_name`
-/// followed by whitespace, then read the next whitespace-bounded word.
-/// Returns `None` for blank lines, comment-only lines (`#…`), and directive
-/// lines (`.method`, `.line`, …) — promoting those would do nothing useful.
+/// Returns the absolute byte range of the opcode token, or `None` for
+/// blank, comment-only, or directive (`.method`, `.line`, …) lines.
 fn opcode_byte_range(line: &str, line_start: usize) -> Option<Range<usize>> {
     let bytes = line.as_bytes();
     let mut cursor = 0;
@@ -272,7 +228,6 @@ fn opcode_byte_range(line: &str, line_start: usize) -> Option<Range<usize>> {
     }
 
     if bytes[cursor] == b'.' {
-        // Directive line (e.g. `.method`, `.registers`, `.line`); not an opcode.
         return None;
     }
 
@@ -287,11 +242,9 @@ fn opcode_byte_range(line: &str, line_start: usize) -> Option<Range<usize>> {
     Some((line_start + start)..(line_start + cursor))
 }
 
-/// Strip byte ranges that fall inside Smali-specific noise the AST diff
-/// can't easily exclude on its own: `.line` directives, leading `:label`
-/// names on instructions, and trailing `# comment` regions. Operates on the
-/// raw source text by line rather than on the tree-sitter parse, because the
-/// grammar doesn't always surface these positions as discrete nodes.
+/// Strip `.line` directives, leading `:label` names, and trailing `#`
+/// comments from `ranges`. Walks the source text by line — the tree-sitter
+/// grammar doesn't always surface these as discrete nodes.
 pub(crate) fn filter_ignored_ranges(source: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.is_empty() {
         return ranges;

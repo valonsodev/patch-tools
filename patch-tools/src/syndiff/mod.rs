@@ -34,25 +34,14 @@ pub fn diff_smali_snippets(
     diff_with_language(Language::Smali, lhs_source, rhs_source, options)
 }
 
-/// Re-export of the Smali "structural-only line" predicate so the rendering
-/// layer can tell `:cond_0` / `.line N` lines apart from real instructions
-/// when deciding which line-level Delete/Insert pairs are pure rename noise
-/// and which are part of a real structural change.
 pub fn is_smali_structural_only_line(line: &str) -> bool {
     languages::smali::is_structural_only_line(line)
 }
 
-/// Re-export of the Smali debug line directive predicate. These directives
-/// are regenerated from debug metadata and are not useful in rendered diffs.
 pub fn is_smali_line_directive(line: &str) -> bool {
     languages::smali::is_line_directive(line)
 }
 
-/// Re-export of the "label-rename pair" predicate: two non-identical
-/// smali lines that share the same label-stripped skeleton (different
-/// `:cond_NN`, `:try_end_NN`, `.line N` only). The rendering layer uses
-/// it to suppress the wall of Delete/Insert noise that appears after a
-/// patch shifts every bytecode offset in a method.
 pub fn smali_lines_are_label_rename(lhs: &str, rhs: &str) -> bool {
     languages::smali::lines_are_label_rename(lhs, rhs)
 }
@@ -264,11 +253,9 @@ fn get_novel_ranges(
     ranges
 }
 
-/// When both replaced nodes are comments, suppress the per-comment highlight:
-/// returning `Some((empty, empty))` consumes the `Replaced` edge in
-/// `collect_ranges` and skips the `levenshtein_pct <= 20` novel-range
-/// fallback, so commented changes don't bleed onto the diff. Returns `None`
-/// for any other node-type pair so the caller can apply its fallback logic.
+/// Both nodes are comments: return `Some((empty, empty))` so `collect_ranges`
+/// consumes the `Replaced` edge and skips the `levenshtein_pct <= 20`
+/// novel-range fallback. `None` for any other pair.
 fn get_replace_ranges(lhs_node: &SyntaxNode<'_>, rhs_node: &SyntaxNode<'_>) -> Option<DiffRanges> {
     matches!(
         (lhs_node.hint.as_ref(), rhs_node.hint.as_ref()),

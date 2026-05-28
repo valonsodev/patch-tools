@@ -119,7 +119,7 @@ pub fn apk_display_name(identity: &ApkIdentity) -> String {
     format!("{} / {}", identity.package_name, identity.package_version)
 }
 
-/// Resolve a `method_id` which may be a `unique_id` or `java_signature`.
+/// Accepts a `unique_id` or `java_signature`.
 pub fn resolve_method_id(apk: &ApkData, raw: &str) -> Option<String> {
     if apk
         .method_infos

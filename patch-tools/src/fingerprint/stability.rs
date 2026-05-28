@@ -2,10 +2,6 @@ use std::cmp::Ordering;
 
 use crate::types::{InstructionFeature, MethodFingerprintDto, instruction_feature};
 
-// =============================================================================
-// Ranking / sorting
-// =============================================================================
-
 /// JVM primitive type descriptors and names — never minified.
 const PRIMITIVE_NAMES: &[&str] = &[
     "boolean", "byte", "char", "double", "float", "int", "long", "short", "void", "z", "b", "c",
@@ -118,7 +114,6 @@ pub(crate) fn minification_score(fqn: &str) -> i32 {
     }
 }
 
-/// Score a single path segment for minification likelihood.
 fn segment_minification_score(segment: &str) -> i32 {
     let s = segment.trim().trim_end_matches(';');
     if s.is_empty() {
@@ -183,7 +178,6 @@ pub(crate) fn stability_score(fp: &MethodFingerprintDto) -> i32 {
     score
 }
 
-/// Per-instruction stability contribution.
 pub(crate) fn instruction_stability(instr: &InstructionFeature) -> i32 {
     match instr.kind_ref() {
         instruction_feature::Kind::StringConst(_) => -2,
@@ -247,10 +241,8 @@ pub(crate) fn compare_fingerprints(a: &MethodFingerprintDto, b: &MethodFingerpri
 fn ranking_cost(fp: &MethodFingerprintDto, stability: i32) -> i32 {
     const SIZE_WEIGHT: i32 = 3;
 
-    // Strings are the strongest stable signal we emit, so give them an extra
-    // bonus on top of their stability score. This lets multi-string fingerprints
-    // outrank terse single-call / parameter-only matches without changing the
-    // reported size.
+    // Bonus on top of stability so multi-string fingerprints outrank terse
+    // single-call / parameter-only matches without changing reported size.
     let size = i32::try_from(fp.size).unwrap_or(i32::MAX / SIZE_WEIGHT);
     let string_bonus = i32::try_from(count_type(fp, is_string_const)).unwrap_or(i32::MAX);
 
