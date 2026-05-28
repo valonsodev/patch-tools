@@ -331,6 +331,18 @@ fn render_fingerprint_matches(
             ));
         }
     }
+    let shown = payload.methods.len() as u32;
+    if payload.total_matches > shown {
+        let remaining = payload.total_matches - shown;
+        if is_md {
+            output.push_stdout(fmt.bullet(&format!("…and {remaining} more")));
+        } else {
+            output.push_stdout(format!(
+                "    {}\n",
+                style::dimmed(&format!("…and {remaining} more"))
+            ));
+        }
+    }
     if is_md {
         output.push_stdout("\n");
     }

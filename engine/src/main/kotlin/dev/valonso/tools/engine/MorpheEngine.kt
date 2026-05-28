@@ -267,7 +267,7 @@ class MorpheEngine(
 
         when (item.id.kind) {
             ScriptItemKind.Fingerprint -> {
-                val matches = apk.searchFingerprint(freshItem.value as Fingerprint)
+                val allMatches = apk.searchFingerprint(freshItem.value as Fingerprint)
                     .map { method ->
                         MatchedMethod(
                             uniqueId = method.uniqueId,
@@ -277,8 +277,8 @@ class MorpheEngine(
                             parameters = method.parameterTypes.map { it.toString() },
                         )
                     }
-                    .take(config.fingerprintResultCap)
-                addResult(EngineResult.FingerprintMatches(matches))
+                val matches = allMatches.take(config.fingerprintResultCap)
+                addResult(EngineResult.FingerprintMatches(matches, allMatches.size))
             }
 
             ScriptItemKind.Generic -> {
