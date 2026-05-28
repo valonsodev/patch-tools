@@ -465,10 +465,8 @@ fn render_modified_resource(
     let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
     let diff_text = if diff::is_xml_path(&change.relative_path) {
         diff::render_xml_diff(original, modified, 3, fmt.render_mode())
-    } else if is_md {
-        diff::render_markdown_diff(original, modified, 3)
     } else {
-        diff::render_colored_diff(original, modified, 3)
+        diff::render_diff(original, modified, 3, fmt.render_mode())
     };
 
     if diff_text.is_empty() {

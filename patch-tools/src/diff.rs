@@ -46,55 +46,26 @@ struct SemanticRenderOptions {
     show_line_numbers: bool,
     merge_mode: SegmentMergeMode,
     group_separator: Option<&'static str>,
-    /// Optional per-line classifier. A line for which this returns `true` is
-    /// treated as a *structural anchor* (Smali `:cond_0` / `.line 42`): a
-    /// lone Delete or Insert (no matching counterpart in the same change
-    /// block) is force-highlighted as a whole-line change instead of
-    /// rendering as silent plain text.
+    /// Lone unmatched Delete/Insert lines for which this returns `true` are
+    /// force-highlighted instead of rendered as silent plain text (Smali
+    /// `:cond_0`, `.line 42`).
     structural_only: Option<fn(&str) -> bool>,
-    /// Optional two-line predicate. When set, any Delete+Insert pair within
-    /// a contiguous change block for which this returns `true` is treated
-    /// as pure rebuild-noise — both sides go silent (cleared segments,
-    /// `active = false`). For Smali this captures the case where every
-    /// `:cond_NN` / `:try_end_NN` / `.line N` in a method shifted because
-    /// the patch inserted instructions at the top.
+    /// Delete+Insert pairs within one change block for which this returns
+    /// `true` are silenced as rebuild noise — every `:cond_NN` / `.line N`
+    /// shifts when the patch inserts instructions earlier in the method.
     noise_pair: Option<fn(&str, &str) -> bool>,
-    /// Optional per-line suppression hook. Smali uses this to drop `.line`
-    /// debug directives entirely from rendered diffs.
+    /// Lines for which this returns `true` are dropped from the diff
+    /// entirely (Smali `.line` debug directives).
     suppress_line: Option<fn(&str) -> bool>,
 }
 
-/// Render diff lines as markdown with `{+added+}` / `[-removed-]` markers.
-pub fn render_markdown_diff(original: &str, modified: &str, context_lines: usize) -> String {
-    render_line_diff(
-        original,
-        modified,
-        context_lines,
-        RenderMode::Markdown,
-        false,
-    )
-}
-
-/// Render diff lines with colors for terminal display.
-pub fn render_colored_diff(original: &str, modified: &str, context_lines: usize) -> String {
-    render_line_diff(original, modified, context_lines, RenderMode::Human, false)
-}
-
-fn render_line_diff(
+pub fn render_diff(
     original: &str,
     modified: &str,
     context_lines: usize,
     mode: RenderMode,
-    show_line_numbers: bool,
 ) -> String {
-    render_line_diff_with_separator(
-        original,
-        modified,
-        context_lines,
-        mode,
-        show_line_numbers,
-        None,
-    )
+    render_line_diff_with_separator(original, modified, context_lines, mode, false, None)
 }
 
 fn render_line_diff_with_separator(
@@ -168,7 +139,7 @@ pub fn render_smali_diff(
                 suppress_line: Some(is_smali_line_directive),
             },
         ),
-        None => render_line_diff(original, modified, context_lines, mode, true),
+        None => render_line_diff_with_separator(original, modified, context_lines, mode, true, None),
     }
 }
 
@@ -676,24 +647,12 @@ fn render_semantic_diff(
     out
 }
 
-/// Two-stage cleanup of Delete/Insert lines that aren't really part of the
-/// semantic change.
-///
-/// **Stage 1 — `noise_pair` (skeleton match within a change block).**
-/// `similar` splits any source-line difference into Delete+Insert, so a
-/// patch that shifts every bytecode offset in a method floods the diff
-/// with `:cond_NN`, `:try_end_NN`, `.line N` rename pairs and instructions
-/// whose only delta is the label they reference (`goto :goto_56` vs
-/// `goto :goto_58`). For each contiguous run of non-Equal lines we
-/// greedy-pair Deletes with Inserts whose label-stripped skeleton matches
-/// and silence both (cleared segments, `active = false`).
-///
-/// **Stage 2 — `structural_only` fallback.** A lone `:cond_0` Delete with
-/// no skeleton-matched partner (e.g. the Busuu fixture, where a whole
-/// early-return branch including the label is deleted outright) has no
-/// AST byte-ranges of its own, so it would otherwise render as silent
-/// plain text in the middle of a Delete cluster. We promote its whole
-/// content to a single segment so it shows up as a real `[-…-]` line.
+/// Silence Delete+Insert pairs that `noise_pair` flags as rebuild noise
+/// (`similar` splits any line difference into Delete+Insert, so a patch that
+/// shifts bytecode offsets floods the diff with `:cond_NN`/`.line N` renames).
+/// As a fallback, promote a lone structural-only Delete or Insert into a
+/// highlighted whole-line segment so it doesn't read as silent plain text
+/// in the middle of a Delete cluster (Busuu-style branch deletions).
 fn apply_structural_fixup(
     semantic_lines: &mut [SemanticLine],
     is_structural: Option<fn(&str) -> bool>,
@@ -701,7 +660,6 @@ fn apply_structural_fixup(
 ) {
     let mut paired = vec![false; semantic_lines.len()];
 
-    // Stage 1: skeleton-matched noise pairs, scoped to each change block.
     if let Some(noise_pair) = noise_pair {
         let mut index = 0;
         while index < semantic_lines.len() {
@@ -716,8 +674,6 @@ fn apply_structural_fixup(
             }
             let end = index;
 
-            // Greedy first-fit: each Delete claims the first unmatched
-            // Insert whose skeleton agrees with it.
             for delete_idx in start..end {
                 if semantic_lines[delete_idx].tag != ChangeTag::Delete || paired[delete_idx] {
                     continue;
@@ -739,8 +695,6 @@ fn apply_structural_fixup(
         }
     }
 
-    // Apply silencing for paired noise lines and (stage 2) lone-line
-    // promotion for unpaired structural-only deletes / inserts.
     for (index, line) in semantic_lines.iter_mut().enumerate() {
         if !matches!(line.tag, ChangeTag::Delete | ChangeTag::Insert) {
             continue;
@@ -811,14 +765,10 @@ fn collapse_semantic_replacements(
     rendered
 }
 
-/// Pair Delete/Insert lines within a contiguous non-Equal block by best
-/// inline match (not strictly by adjacency). This lets a `const-string v0,
-/// "[-free-]{+standard+}"` rename render inline even when a structural
-/// delete (`:cond_0`, `if-nez` …) sits between the two `const-string` lines
-/// in `similar`'s change stream. Originally written for XML attribute
-/// replacements where similar's line ordering interleaves attribute
-/// deletes and inserts; the algorithm is grammar-agnostic and we now use
-/// it for Smali too.
+/// Pair Delete/Insert lines within a non-Equal block by best inline match
+/// rather than by adjacency, so a `const-string v0, "[-free-]{+standard+}"`
+/// rename pairs inline even when `similar`'s change stream interleaves
+/// structural-only lines or XML attribute insertions between the two sides.
 fn collapse_replacement_block(
     lines: &[SemanticLine],
     mode: RenderMode,
@@ -888,22 +838,11 @@ fn collapse_replacement_block(
         .collect()
 }
 
-/// Decide whether a Delete at `delete_index` may pair (inline-combine) with
-/// an Insert at `insert_index` despite intermediate lines sitting between
-/// them in `similar`'s change stream.
-///
-/// **Without** a `structural_only` classifier (XML mode), any intermediate
-/// content is allowed — XML attribute insertions and deletions routinely
-/// interleave with each other and the test suite depends on cross-line
-/// pairing there.
-///
-/// **With** a classifier (Smali mode), every strictly-intermediate line
-/// must be structural-only (`:cond_0`, `.line 42`). This prevents
-/// misleading "this register changed" inline pairings across long
-/// stretches of newly-inserted code — e.g. `return-object v0` at the top of
-/// the old method pairing with `return-object v1` at the bottom of a
-/// rewritten method, which produced jumbled line-number ordering in the
-/// gallery's Merriam-Webster fixture.
+/// In Smali mode, every line strictly between the Delete and Insert must
+/// be structural-only — otherwise `return-object v0` at the top of an old
+/// method pairs inline with `return-object v1` at the bottom of a rewritten
+/// one, jumbling the line-number column (Merriam-Webster fixture). XML mode
+/// has no classifier and allows any intermediate content.
 fn can_cross_pair(
     lines: &[SemanticLine],
     delete_index: usize,
@@ -959,14 +898,12 @@ fn combine_semantic_replacement(
         return None;
     }
 
-    // At least the inserted side must be active for a combined rendering.
     if !inserted.active {
         return None;
     }
 
-    // When the deleted side has no semantic segments (pure addition on the
-    // inserted side), emit only the highlighted insert line.  The old line
-    // carries no unique information the combined view would lose.
+    // Pure addition on the inserted side: emit only the highlighted insert
+    // line — the old line's content is fully reproduced as inserted context.
     if !deleted.active {
         let inserted_contexts = line_context_segments(&inserted.line, &inserted.segments);
         let joined_context: String = inserted_contexts.concat();
@@ -986,8 +923,6 @@ fn combine_semantic_replacement(
         }
         return None;
     }
-
-    // Both sides are active — try the standard context-matching combination.
 
     let deleted_contexts = line_context_segments(&deleted.line, &deleted.segments);
     let inserted_contexts = line_context_segments(&inserted.line, &inserted.segments);
