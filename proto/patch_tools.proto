@@ -359,6 +359,7 @@ message CommonFingerprintResultResponse {
 
 message MethodInfoList {
   repeated MethodInfoDto items = 1;
+  uint32 total = 2;
 }
 
 message SearchResultResponse {

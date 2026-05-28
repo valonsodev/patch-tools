@@ -47,12 +47,12 @@ pub fn build_search_index(methods: &[MethodInfoDto]) -> Vec<Utf32String> {
 }
 
 /// Fuzzy-match `query` against each APK's haystacks; query words score
-/// independently and sum. Returns `package/version → top-`limit` methods`.
+/// independently and sum. Returns `package/version → (total matches, top-`limit` methods)`.
 pub fn search_all_apks<'a>(
     apks: impl Iterator<Item = (&'a ApkIdentity, &'a [MethodInfoDto], &'a [Utf32String])>,
     query: &str,
     limit: usize,
-) -> HashMap<String, Vec<MethodInfoDto>> {
+) -> HashMap<String, (usize, Vec<MethodInfoDto>)> {
     let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
     let pattern = Pattern::new(
         query,
@@ -61,7 +61,7 @@ pub fn search_all_apks<'a>(
         AtomKind::Fuzzy,
     );
 
-    let mut results: HashMap<String, Vec<MethodInfoDto>> = HashMap::new();
+    let mut results: HashMap<String, (usize, Vec<MethodInfoDto>)> = HashMap::new();
 
     for (identity, methods, haystacks) in apks {
         debug_assert_eq!(methods.len(), haystacks.len());
@@ -74,13 +74,14 @@ pub fn search_all_apks<'a>(
         }
 
         scored.sort_by_key(|score| std::cmp::Reverse(score.0));
+        let total = scored.len();
         scored.truncate(limit);
 
         if !scored.is_empty() {
             let infos: Vec<MethodInfoDto> = scored.into_iter().map(|(_, info)| info).collect();
             results.insert(
                 format!("{} / {}", identity.package_name, identity.package_version),
-                infos,
+                (total, infos),
             );
         }
     }

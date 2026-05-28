@@ -530,7 +530,15 @@ fn search_methods_response(apks: &[Arc<ApkData>], query: &str, limit: usize) -> 
         limit,
     )
     .into_iter()
-    .map(|(apk_id, methods)| (apk_id, MethodInfoList { items: methods }))
+    .map(|(apk_id, (total, methods))| {
+        (
+            apk_id,
+            MethodInfoList {
+                items: methods,
+                total: total as u32,
+            },
+        )
+    })
     .collect();
 
     DaemonResponse {

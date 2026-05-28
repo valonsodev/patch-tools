@@ -171,7 +171,7 @@ fn render_fingerprint_result(
     if fmt.is_markdown() {
         output.push_stdout(fmt.heading(2, "Fingerprints"));
         output.push_stdout(format!(
-            "Generated {} fingerprint(s). Use the results below as-is; they already target unique matches.\n\n",
+            "Generated {} fingerprint(s), ranked from best to worst. Review and adapt them — prefer candidates anchored on stable signals (strings, literals, opcodes, signatures, structure) over minified or obfuscated member names. If none avoid obfuscated names, surface that to the user instead of relying on unstable references.\n\n",
             payload.fingerprints.len()
         ));
         for (index, fingerprint) in payload.fingerprints.iter().enumerate() {
@@ -182,7 +182,7 @@ fn render_fingerprint_result(
         output.push_stdout(format!(
             "{}\n\n",
             style::bold(&format!(
-                "{} fingerprint(s). Use the results below as-is; they already target unique matches",
+                "{} fingerprint(s). Review and adapt them; prefer stable anchors over minified or obfuscated names, and surface to the user if none avoid them",
                 payload.fingerprints.len()
             ))
         ));
@@ -261,16 +261,27 @@ fn render_search_result(
         output.push_stdout(fmt.heading(2, "Search results"));
     }
     for (apk_label, methods) in &payload.results {
+        let shown = methods.items.len() as u32;
+        let remaining = methods.total.saturating_sub(shown);
         if is_md {
             output.push_stdout(fmt.heading(3, &format!("APK {apk_label}")));
             for method in &methods.items {
                 output.push_stdout(fmt.bullet(&fmt.smali_method_id(method)));
+            }
+            if remaining > 0 {
+                output.push_stdout(fmt.bullet(&format!("…and {remaining} more")));
             }
             output.push_stdout("\n");
         } else {
             output.push_stdout(format!("{}\n", style::bold(&format!("APK {apk_label}"))));
             for method in &methods.items {
                 output.push_stdout(format!("  {}\n", fmt.smali_method_id(method)));
+            }
+            if remaining > 0 {
+                output.push_stdout(format!(
+                    "  {}\n",
+                    style::dimmed(&format!("…and {remaining} more"))
+                ));
             }
         }
     }
