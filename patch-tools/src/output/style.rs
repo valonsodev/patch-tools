@@ -1,15 +1,9 @@
 use owo_colors::OwoColorize;
 use supports_color::Stream;
 
-/// Whether stderr/stdout supports color output.
 fn color_enabled() -> bool {
     supports_color::on(Stream::Stdout).is_some()
 }
-
-// ---------------------------------------------------------------------------
-// Semantic style helpers — each returns a styled `String`.
-// When color is disabled, they return the input unchanged.
-// ---------------------------------------------------------------------------
 
 macro_rules! style_fn {
     ($name:ident, $($method:ident).+) => {

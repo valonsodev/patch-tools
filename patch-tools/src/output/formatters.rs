@@ -19,6 +19,9 @@ pub(super) trait Formatter {
     fn matched_method_id(&self, method: &MatchedMethodDto) -> String;
     fn smali_method_id(&self, method: &crate::types::MethodInfoDto) -> String;
     fn render_mode(&self) -> diff::RenderMode;
+    fn is_markdown(&self) -> bool {
+        matches!(self.render_mode(), diff::RenderMode::Markdown)
+    }
     fn labeled_diff_block(&self, label: &str, kind: &str, diff_text: &str) -> String;
     fn no_changes_msg(&self) -> String;
 }

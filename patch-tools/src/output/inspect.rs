@@ -1,4 +1,3 @@
-use crate::diff;
 use crate::types::ClassFingerprintResultResponse;
 use std::fmt::Write as _;
 
@@ -9,7 +8,7 @@ pub(super) fn render_class_fingerprints(
     payload: &ClassFingerprintResultResponse,
     fmt: &dyn Formatter,
 ) -> String {
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     let mut output = String::new();
 
     if is_md {

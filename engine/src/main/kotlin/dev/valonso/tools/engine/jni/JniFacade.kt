@@ -334,6 +334,7 @@ private fun EngineResult.toProto(): EngineResultProto =
                 fingerprint_matches =
                     EngineResultFingerprintMatchesProto(
                         methods = methods.map { it.toProto() },
+                        total_matches = totalMatches,
                     ),
             )
 

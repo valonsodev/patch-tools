@@ -10,7 +10,7 @@ const AGENTS_MD_TEMPLATE: &str = include_str!(concat!(env!("OUT_DIR"), "/AGENTS.
 const DAEMON_SOCKET_FILE: &str = ".patch-tools.sock";
 const DAEMON_START_LOG_FILE: &str = "patch-tools.log";
 
-/// Start daemon as a child process by re-executing self with internal-daemon subcommand.
+/// Re-execute self with the hidden `internal-daemon` subcommand.
 pub async fn start(sock: &Path, apks: &[PathBuf]) -> Result<()> {
     let exe = std::env::current_exe().context("cannot find current executable")?;
     let log_path = start_log_path()?;
@@ -54,7 +54,7 @@ pub async fn start(sock: &Path, apks: &[PathBuf]) -> Result<()> {
                 |contents| format!("\nDaemon startup log ({}):\n{contents}", log_path.display()),
             );
             anyhow::bail!(
-                "Daemon exited early with status: {status}{log_message}\nThe daemon may be running inside a sandbox that blocks Unix socket binding or detached child processes."
+                "Daemon exited early with status: {status}{log_message}\nThe daemon may be running inside a sandbox that blocks local-socket binding or detached child processes."
             );
         }
         if is_expected_daemon_ready(sock, child.id()).await? {
@@ -79,7 +79,6 @@ pub async fn start(sock: &Path, apks: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-/// Ask the daemon to stop and wait until its socket is removed.
 pub async fn stop(sock: &Path) -> Result<()> {
     let mut client = DaemonClient::connect(sock).await?;
     let response = client.stop().await?;
@@ -90,7 +89,6 @@ pub async fn stop(sock: &Path) -> Result<()> {
     wait_for_socket_removal(sock, std::time::Duration::from_secs(30)).await
 }
 
-/// Run the daemon in-process (called by internal-daemon subcommand).
 pub async fn run(sock: &Path) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -132,9 +130,7 @@ pub fn scaffold_scripts() -> Result<()> {
 
     println!("Created {}", main_path.display());
     println!("Created {}", agents_path.display());
-    println!(
-        "Edit main.kts and run `patch-tools run main.kts` when the daemon has an APK loaded."
-    );
+    println!("Edit main.kts and run `patch-tools run main.kts` when the daemon has an APK loaded.");
 
     Ok(())
 }
@@ -181,13 +177,9 @@ async fn wait_for_socket_removal(sock: &Path, timeout: std::time::Duration) -> R
     }
 }
 
-/// Detach the daemon from the launching shell so it survives the parent exiting.
-///
-/// `setsid()` creates a new session and process group with no controlling
-/// terminal. `Command::process_group(0)` (stable in std) only sets the pgid —
-/// the child would still be associated with the parent's session and would
-/// receive SIGHUP when the shell exits. We need the full session split, which
-/// requires `unsafe { setsid() }` from `pre_exec` (after fork, before exec).
+/// `Command::process_group(0)` only sets the pgid; the child would still
+/// receive SIGHUP when the parent shell exits. A full session split needs
+/// `setsid()` from `pre_exec` (after fork, before exec).
 #[cfg(unix)]
 fn configure_detached_daemon(cmd: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;
@@ -202,5 +194,17 @@ fn configure_detached_daemon(cmd: &mut std::process::Command) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn configure_detached_daemon(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+
+    // CreateProcess flags from <winbase.h>; hard-coded to avoid pulling in windows-sys.
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+}
+
+#[cfg(not(any(unix, windows)))]
 fn configure_detached_daemon(_cmd: &mut std::process::Command) {}

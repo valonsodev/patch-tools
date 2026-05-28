@@ -4,7 +4,6 @@ use adb_client::{
 };
 use anyhow::{Context, Result, bail};
 use std::path::Path;
-use std::process::Command;
 
 pub(super) trait AdbClient {
     fn eligible_devices(&mut self) -> Result<Vec<String>>;
@@ -66,38 +65,19 @@ impl AdbClient for RealAdbClient {
     }
 
     fn install(&mut self, serial: &str, apk_path: &Path, user: u32) -> Result<()> {
-        let user = user.to_string();
-        let output = Command::new("adb")
-            .arg("-s")
-            .arg(serial)
-            .arg("install")
-            .arg("--user")
-            .arg(user.as_str())
-            .arg(apk_path)
-            .output()
+        let mut device = self
+            .server
+            .get_device_by_name(serial)
+            .with_context(|| format!("failed to connect to adb device `{serial}`"))?;
+        let user_str = user.to_string();
+        device
+            .install(apk_path, Some(user_str.as_str()))
             .with_context(|| {
                 format!(
-                    "failed to invoke `adb install` for device `{serial}`, user `{user}`, apk `{}`",
+                    "adb install failed for device `{serial}`, user `{user}`, apk `{}`",
                     apk_path.display(),
                 )
-            })?;
-
-        if output.status.success() {
-            return Ok(());
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let exit = output.status.code().map_or_else(
-            || "terminated by signal".to_string(),
-            |code| code.to_string(),
-        );
-        bail!(
-            "adb install failed for device `{serial}`, user `{user}`, apk `{}`\nexit status: {exit}\nstdout:\n{}\nstderr:\n{}",
-            apk_path.display(),
-            normalize_output(&stdout),
-            normalize_output(&stderr),
-        )
+            })
     }
 }
 

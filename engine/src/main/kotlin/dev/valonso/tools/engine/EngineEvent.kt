@@ -72,6 +72,7 @@ sealed interface EngineEvent {
 sealed interface EngineResult {
     data class FingerprintMatches(
         val methods: List<MatchedMethod>,
+        val totalMatches: Int,
     ) : EngineResult
 
     data class BytecodePatchResult(

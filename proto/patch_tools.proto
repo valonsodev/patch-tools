@@ -170,6 +170,7 @@ message MethodFingerprintDto {
 
 message EngineResultFingerprintMatches {
   repeated MatchedMethodDto methods = 1;
+  uint32 total_matches = 2;
 }
 
 message EngineResultBytecodeDiffResult {

@@ -54,7 +54,11 @@ pub fn run_post_execute_save(
     }
 
     if let SaveTarget::File(path) = target {
-        let successful = summary.apks.iter().filter(|a| a.source_path.is_some()).count();
+        let successful = summary
+            .apks
+            .iter()
+            .filter(|a| a.source_path.is_some())
+            .count();
         if successful > 1 {
             return Err(fail_save(
                 format,

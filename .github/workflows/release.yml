@@ -35,6 +35,8 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-apple-darwin, x86_64-pc-windows-gnu
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
@@ -46,10 +48,16 @@ jobs:
           sudo apt update
           sudo apt install -y just protobuf-compiler
 
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v2
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "lts/*"
+
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
 
       - name: Install semantic-release
         run: npm install
@@ -59,6 +67,14 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: just all
+
+      - name: Build macOS arm64 artifact
+        run: cargo zigbuild --release --target aarch64-apple-darwin
+        working-directory: patch-tools
+
+      - name: Build Windows x86_64 artifact
+        run: cargo zigbuild --release --target x86_64-pc-windows-gnu
+        working-directory: patch-tools
 
       - name: Run semantic-release
         env:

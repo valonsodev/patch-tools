@@ -1,25 +1,28 @@
 use super::engine_worker::{ApkData, EngineHandle, rayon_spawn, spawn_engine_worker};
 use super::resolver::{
-    apk_display_name, format_apk_not_found_error, resolve_apk_selector, resolve_class_id,
-    resolve_method_id, StateView,
+    StateView, apk_display_name, format_apk_not_found_error, resolve_apk_selector,
+    resolve_class_id, resolve_method_id,
 };
 use crate::daemon;
 use crate::fingerprint::ClassFingerprintCandidate;
+use crate::search;
 use crate::types::{
     ApkLoadedResponse, ApkStatus, ApkUnloadedResponse, ClassFingerprintCandidateDto,
     ClassFingerprintResultResponse, CommonFingerprintResultResponse, CommonFingerprintTargetDto,
-    DaemonRequest, DaemonResponse, FingerprintResultResponse, MatchedMethodDto, MethodFingerprintDto,
-    MethodInfoDto, MethodInfoList, MethodMapCandidateDto, MethodMapResponse, MethodSmaliResponse,
-    SearchResultResponse, StatusInfoResponse, daemon_request, daemon_response,
+    DaemonRequest, DaemonResponse, FingerprintResultResponse, MatchedMethodDto,
+    MethodFingerprintDto, MethodInfoDto, MethodInfoList, MethodMapCandidateDto, MethodMapResponse,
+    MethodSmaliResponse, SearchResultResponse, StatusInfoResponse, daemon_request, daemon_response,
 };
-use crate::search;
 use anyhow::{Context, Result};
+use interprocess::local_socket::{
+    GenericFilePath, ListenerOptions, ToFsName,
+    tokio::{Stream, prelude::*},
+};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::net::UnixListener;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -37,11 +40,6 @@ impl SharedState {
     }
 }
 
-// =============================================================================
-// Server
-// =============================================================================
-
-/// Run the daemon Unix socket server, dispatching protobuf requests.
 pub async fn run(socket_path: &Path) -> Result<()> {
     let _ = std::fs::remove_file(socket_path);
     if let Some(parent) = socket_path.parent() {
@@ -55,7 +53,13 @@ pub async fn run(socket_path: &Path) -> Result<()> {
         daemon_pid: std::process::id(),
     }));
 
-    let listener = UnixListener::bind(socket_path).context("failed to bind unix socket")?;
+    let name = socket_path
+        .to_fs_name::<GenericFilePath>()
+        .context("failed to convert socket path to local-socket name")?;
+    let listener = ListenerOptions::new()
+        .name(name)
+        .create_tokio()
+        .context("failed to bind local socket")?;
 
     tracing::info!("Listening on {}", socket_path.display());
 
@@ -72,7 +76,7 @@ pub async fn run(socket_path: &Path) -> Result<()> {
         tokio::select! {
             () = shutdown.cancelled() => break,
             accept_result = listener.accept() => {
-                let (stream, _addr) = accept_result?;
+                let stream = accept_result?;
                 tracing::debug!("New connection");
 
                 let state = Arc::clone(&state);
@@ -96,12 +100,12 @@ pub async fn run(socket_path: &Path) -> Result<()> {
 }
 
 async fn handle_connection(
-    stream: tokio::net::UnixStream,
+    stream: Stream,
     state: &Arc<RwLock<SharedState>>,
     engine_tx: &EngineHandle,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let (mut reader, mut writer) = stream.into_split();
+    let (mut reader, mut writer) = stream.split();
 
     loop {
         let request = tokio::select! {
@@ -265,14 +269,15 @@ async fn handle_generate_fingerprint(
     };
 
     match resolve_method_id(&apk, &generate.method_id) {
-        Some(unique_id) => match rayon_spawn(move || {
-            generate_fingerprint_response(&apk, &unique_id, limit)
-        })
-        .await
-        {
-            Ok(response) => response,
-            Err(error) => DaemonResponse::error(format!("fingerprint generation failed: {error:#}")),
-        },
+        Some(unique_id) => {
+            match rayon_spawn(move || generate_fingerprint_response(&apk, &unique_id, limit)).await
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    DaemonResponse::error(format!("fingerprint generation failed: {error:#}"))
+                }
+            }
+        }
         None => DaemonResponse::error(format!("Method not found: {}", generate.method_id)),
     }
 }

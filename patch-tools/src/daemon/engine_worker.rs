@@ -1,16 +1,13 @@
-//! Engine worker — owns the JVM and serializes all JNI access onto a
-//! dedicated OS thread. Public surface is the [`EngineHandle`] returned by
-//! [`spawn_engine_worker`].
+//! Owns the JVM and serializes JNI access onto one dedicated OS thread.
 
 use crate::engine_jni::EngineJni;
-use crate::types::{ApkIdentity, ApkStatus, ExecutionResultResponse, MethodInfoDto, MethodData};
 use crate::fingerprint::FingerprintIndex;
 use crate::search;
+use crate::types::{ApkIdentity, ApkStatus, ExecutionResultResponse, MethodData, MethodInfoDto};
 use anyhow::{Context, Result};
 use nucleo_matcher::Utf32String;
 use tokio::sync::{mpsc, oneshot};
 
-/// Per-APK data stored on the Rust side after JNI bulk export.
 pub struct ApkData {
     pub identity: ApkIdentity,
     pub status: ApkStatus,
@@ -24,9 +21,8 @@ pub struct LoadedApk {
     pub apk: ApkData,
 }
 
-/// A unit of work to run on the engine worker thread. Each job receives the
-/// borrowed `EngineJni` and is responsible for sending its own reply (typically
-/// over a `oneshot` channel set up by `EngineHandle::dispatch`).
+/// Each job borrows the `EngineJni` and sends its own reply, typically via a
+/// `oneshot` set up by [`EngineHandle::dispatch`].
 type EngineJob = Box<dyn FnOnce(&EngineJni) + Send>;
 
 #[derive(Clone)]
@@ -35,7 +31,6 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
-    /// Submit a job to the engine worker and await its result.
     async fn dispatch<R, F>(&self, job: F) -> Result<R>
     where
         F: FnOnce(&EngineJni) -> R + Send + 'static,
@@ -92,10 +87,8 @@ impl EngineHandle {
     }
 }
 
-/// Run a CPU-bound closure on the rayon thread pool and await the result.
-/// Used in place of `tokio::task::spawn_blocking` for handlers that already do
-/// rayon-parallel work internally — keeps the tokio blocking pool free for
-/// actual blocking I/O.
+/// Use instead of `tokio::task::spawn_blocking` for handlers that already do
+/// rayon-parallel work, so the tokio blocking pool stays free for I/O.
 pub async fn rayon_spawn<F, T>(f: F) -> Result<T>
 where
     F: FnOnce() -> T + Send + 'static,
@@ -108,9 +101,9 @@ where
     rx.await.context("rayon worker dropped result")
 }
 
-/// Spawn the engine worker. The JVM is constructed on the worker thread itself
-/// so the resulting permanent JNI attachment lives on a thread we control end-
-/// to-end. Returning the handle resolves only after construction succeeds.
+/// Builds the JVM on the worker thread itself so the permanent JNI
+/// attachment lives on a thread we own end-to-end. Returns only after the
+/// JVM is up.
 pub fn spawn_engine_worker() -> Result<EngineHandle> {
     let (tx, mut rx) = mpsc::channel::<EngineJob>(32);
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();
@@ -129,8 +122,6 @@ pub fn spawn_engine_worker() -> Result<EngineHandle> {
                 }
             };
 
-            // Run jobs until the channel closes (every sender dropped).
-            // `Drop for EngineJni` shuts the JVM down on the way out.
             while let Some(job) = rx.blocking_recv() {
                 job(&engine);
             }

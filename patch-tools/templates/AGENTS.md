@@ -61,6 +61,7 @@ Generates candidate fingerprints for one method.
 - `apk`: optional APK selector. Omit it only when exactly one APK is loaded.
 - `method_id`: method selector. Usually the smali `unique_id`, but Java-signature form may also
   work in many flows.
+  Example smali `unique_id`: `Lcom/example/Foo;->bar(I)Ljava/lang/String;`.
 - `-n <limit>` or `--limit <limit>`: maximum number of generated fingerprints to return.
 
 ### `patch-tools class-fingerprint [apk] <class_id>`

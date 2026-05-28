@@ -282,19 +282,12 @@ impl Hash for SyntaxTreeCursor<'_> {
     }
 }
 
-/// Classifies a leaf tree-sitter node into a [`SyntaxHint`].
-///
-/// Called once per atom during tree building so the diff engine can flag
-/// "this is punctuation" or "this is a comment" without baking those rules
-/// into the core. Languages with non-Western conventions (or no punctuation at
-/// all) override this; common-case languages use [`default_classify_atom`].
+/// Classifies a leaf tree-sitter node as punctuation or comment.
 pub(crate) type AtomClassifier =
     for<'a> fn(node: tree_sitter::Node<'_>, text: &'a str) -> Option<SyntaxHint<'a>>;
 
-/// Decides whether a list node's first/last children look like a delimiter
-/// pair (`{`/`}`, `(`/`)`, …). Returning `Some((open, close))` flags the node
-/// as delimited so the diff engine can match delimiters independently of
-/// their contents. Defaults to [`default_detect_delimiters`].
+/// Returns `Some((open, close))` when a list node's first/last children
+/// form a delimiter pair so they can be matched independently of contents.
 pub(crate) type DelimiterDetector = for<'a> fn(
     first: tree_sitter::Node<'_>,
     last: tree_sitter::Node<'_>,
@@ -337,26 +330,17 @@ impl BuildTreeOptions {
     }
 
     #[inline]
-    pub(crate) const fn with_excluded_node_types(
-        mut self,
-        types: &'static [&'static str],
-    ) -> Self {
+    pub(crate) const fn with_excluded_node_types(mut self, types: &'static [&'static str]) -> Self {
         self.excluded_node_types = types;
         self
     }
 
-    /// Treat the listed tree-sitter node kinds as atomic leaves: their
-    /// children aren't walked, and the diff engine sees the node as a single
-    /// token whose text is its full byte range. Use this when a grammar
-    /// over-decomposes something the diff should treat as one unit — e.g.,
-    /// Smali's `class_identifier` (`Lpath/to/Class;`) which the grammar
-    /// splits into per-segment children, producing noisy per-segment diff
-    /// markers when only the path changes.
+    /// Treat the listed node kinds as leaves — children aren't walked.
+    /// Use when a grammar over-decomposes a token (Smali `class_identifier`
+    /// splits `Lpath/to/Class;` into per-segment children, producing noisy
+    /// per-segment markers when only the path changes).
     #[inline]
-    pub(crate) const fn with_atomic_node_types(
-        mut self,
-        types: &'static [&'static str],
-    ) -> Self {
+    pub(crate) const fn with_atomic_node_types(mut self, types: &'static [&'static str]) -> Self {
         self.atomic_node_types = types;
         self
     }
@@ -373,27 +357,6 @@ impl BuildTreeOptions {
     #[inline]
     pub(crate) const fn with_same_kind_replacements(mut self, allow: bool) -> Self {
         self.allow_same_kind_replacements = allow;
-        self
-    }
-
-    /// Override the atom classifier. Smali and XML accept the default; this
-    /// hook exists so a language with non-default punctuation/comment
-    /// conventions can be added without modifying the core.
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) const fn with_classify_atom(mut self, classify: AtomClassifier) -> Self {
-        self.classify_atom = classify;
-        self
-    }
-
-    /// Override the delimiter detector. Smali and XML accept the default;
-    /// this hook exists for grammars that use multi-character or keyword
-    /// delimiters (e.g., a future Kotlin/Java adapter wanting to match
-    /// braces explicitly).
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) const fn with_detect_delimiters(mut self, detect: DelimiterDetector) -> Self {
-        self.detect_delimiters = detect;
         self
     }
 }
@@ -455,9 +418,6 @@ fn build_tree_recursive<'a>(
     ts_node.kind_id().hash(&mut hasher);
 
     if options.atomic_node_types.contains(&ts_node.kind()) {
-        // Treat as a leaf: hash the literal text, skip delimiter detection
-        // and children. The diff engine then sees this node as a single atom
-        // whose text is its full byte range.
         if let Some(text) = source.get(ts_node.byte_range()) {
             text.hash(&mut hasher);
         }
@@ -466,7 +426,8 @@ fn build_tree_recursive<'a>(
         return Some(this_id);
     }
 
-    let (delimiters, _) = detect_node_delimiters(ts_node, source, &mut hasher, options.detect_delimiters);
+    let (delimiters, _) =
+        detect_node_delimiters(ts_node, source, &mut hasher, options.detect_delimiters);
     let mut descendant_count = 0;
 
     let mut children = collect_child_nodes(ts_node, source, &delimiters, options);
@@ -475,13 +436,7 @@ fn build_tree_recursive<'a>(
     }
 
     for child in children {
-        let child_id = build_tree_recursive(
-            child,
-            nodes,
-            Some(this_id),
-            source,
-            options,
-        );
+        let child_id = build_tree_recursive(child, nodes, Some(this_id), source, options);
 
         if let Some(child_id) = child_id {
             let child_node = &nodes[child_id.index()];

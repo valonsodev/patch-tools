@@ -467,9 +467,8 @@ fn pop_all_delimiters<'a>(
     (lhs, rhs, delimiters)
 }
 
-/// A `(cost, vertex)` pair in the priority queue. Ordered by `cost` only so
-/// that vertex types aren't required to be `Ord`; sorted as a min-heap by
-/// flipping the comparison.
+/// Ordered by `cost` only (vertex types aren't `Ord`); sorted as a min-heap
+/// via reversed comparison in [`Ord::cmp`].
 struct HeapEntry<'a> {
     cost: u32,
     vertex: SyntaxVertex<'a>,
@@ -562,7 +561,6 @@ fn reconstruct_route<'a>(
     start: &SyntaxVertex<'a>,
     goal: SyntaxVertex<'a>,
 ) -> Vec<SyntaxPath<'a>> {
-    // Walk parent links from goal back to start, collecting (vertex, edge_taken_to_reach_it).
     let mut reverse_path: Vec<(SyntaxVertex<'a>, SyntaxEdge)> = Vec::new();
     let mut current = goal;
     while current != *start {

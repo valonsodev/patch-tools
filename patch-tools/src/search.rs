@@ -3,38 +3,26 @@ use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
 use std::collections::HashMap;
 
-/// Build a searchable text for a method from its info fields.
-/// Combines class name, method name, descriptor, return type, access flags, java forms.
 fn build_search_haystack(info: &MethodInfoDto) -> String {
     let mut text = String::with_capacity(256);
 
-    // Class name (both smali and java forms)
     text.push_str(&info.defining_class);
     text.push(' ');
     text.push_str(&info.class_name);
     text.push(' ');
-
-    // Method name
     text.push_str(&info.name);
     text.push(' ');
-
-    // Unique id and short id
     text.push_str(&info.unique_id);
     text.push(' ');
     text.push_str(&info.short_id);
     text.push(' ');
-
-    // Java signature
     text.push_str(&info.java_signature);
     text.push(' ');
-
-    // Return type (both forms)
     text.push_str(&info.return_type);
     text.push(' ');
     text.push_str(&info.java_return_type);
     text.push(' ');
 
-    // Parameter types
     for p in &info.parameters {
         text.push_str(p);
         text.push(' ');
@@ -43,8 +31,6 @@ fn build_search_haystack(info: &MethodInfoDto) -> String {
         text.push_str(p);
         text.push(' ');
     }
-
-    // Access flags
     for f in &info.java_access_flags {
         text.push_str(f);
         text.push(' ');
@@ -53,7 +39,6 @@ fn build_search_haystack(info: &MethodInfoDto) -> String {
     text
 }
 
-/// Build cached haystacks for all methods in an APK.
 pub fn build_search_index(methods: &[MethodInfoDto]) -> Vec<Utf32String> {
     methods
         .iter()
@@ -61,9 +46,8 @@ pub fn build_search_index(methods: &[MethodInfoDto]) -> Vec<Utf32String> {
         .collect()
 }
 
-/// Search across all loaded APKs using nucleo fuzzy matching.
-/// Query words are matched independently and their scores are summed.
-/// Returns a map of APK display label → matching `MethodInfoDtos`, sorted by match score.
+/// Fuzzy-match `query` against each APK's haystacks; query words score
+/// independently and sum. Returns `package/version → top-`limit` methods`.
 pub fn search_all_apks<'a>(
     apks: impl Iterator<Item = (&'a ApkIdentity, &'a [MethodInfoDto], &'a [Utf32String])>,
     query: &str,

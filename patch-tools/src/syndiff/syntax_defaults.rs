@@ -1,16 +1,10 @@
 //! Default implementations of the [`AtomClassifier`] and [`DelimiterDetector`]
 //! hooks on [`BuildTreeOptions`]. These encode C-family conventions
-//! (`,`/`;`/`.` punctuation, single-character non-alphanumeric delimiters) and
-//! are *opt-in* — the core build pipeline calls whatever hook the options
-//! carry, so a language that doesn't follow these conventions can override
-//! them via [`BuildTreeOptions::with_classify_atom`] /
-//! [`BuildTreeOptions::with_detect_delimiters`].
+//! (`,`/`;`/`.` punctuation, single-character non-alphanumeric delimiters).
 //!
 //! [`AtomClassifier`]: super::syntax_tree::AtomClassifier
 //! [`DelimiterDetector`]: super::syntax_tree::DelimiterDetector
 //! [`BuildTreeOptions`]: super::syntax_tree::BuildTreeOptions
-//! [`BuildTreeOptions::with_classify_atom`]: super::syntax_tree::BuildTreeOptions::with_classify_atom
-//! [`BuildTreeOptions::with_detect_delimiters`]: super::syntax_tree::BuildTreeOptions::with_detect_delimiters
 
 use super::syntax_tree::SyntaxHint;
 

@@ -37,7 +37,7 @@ fn render_event(event: &EngineEvent, fmt: &dyn Formatter) -> RenderOutput {
     match event.kind_ref() {
         engine_event::Kind::RunCompleted(payload) => {
             if payload.total_items > 0 || payload.total_apks > 0 {
-                if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+                if fmt.is_markdown() {
                     output.push_stdout(format!(
                         "---\n**Run complete**: {} item(s) across {} APK(s)\n",
                         payload.total_items, payload.total_apks
@@ -52,7 +52,7 @@ fn render_event(event: &EngineEvent, fmt: &dyn Formatter) -> RenderOutput {
                 }
             }
             if !payload.errors.is_empty() {
-                if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+                if fmt.is_markdown() {
                     output.push_stdout("\n**Errors**:\n");
                     for error in &payload.errors {
                         output.push_stdout(format!("- {error}\n"));
@@ -68,7 +68,7 @@ fn render_event(event: &EngineEvent, fmt: &dyn Formatter) -> RenderOutput {
             }
         }
         engine_event::Kind::RunFailed(payload) => {
-            if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+            if fmt.is_markdown() {
                 output.push_stderr(format!("**Run failed**: {}\n", payload.error));
             } else {
                 output.push_stderr(format!(
@@ -201,7 +201,7 @@ fn render_item_result_groups(entries: &[ItemResultEntry], fmt: &dyn Formatter) -
         return output;
     }
 
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     let mut first_apk = true;
 
     for apk_group in group_item_results(entries) {
@@ -274,7 +274,7 @@ fn group_item_results(entries: &[ItemResultEntry]) -> Vec<ItemApkGroup> {
 }
 
 fn render_grouped_result(result: &EngineResult, fmt: &dyn Formatter) -> RenderOutput {
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     let mut output = match result.kind_ref() {
         engine_result::Kind::FingerprintMatches(payload) => {
             render_fingerprint_matches(payload, fmt)
@@ -302,7 +302,7 @@ fn render_fingerprint_matches(
     fmt: &dyn Formatter,
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
 
     if payload.methods.is_empty() {
         if is_md {
@@ -328,6 +328,18 @@ fn render_fingerprint_matches(
                     &method.parameters,
                     &method.return_type,
                 )
+            ));
+        }
+    }
+    let shown = payload.methods.len() as u32;
+    if payload.total_matches > shown {
+        let remaining = payload.total_matches - shown;
+        if is_md {
+            output.push_stdout(fmt.bullet(&format!("…and {remaining} more")));
+        } else {
+            output.push_stdout(format!(
+                "    {}\n",
+                style::dimmed(&format!("…and {remaining} more"))
             ));
         }
     }
@@ -389,7 +401,7 @@ fn render_bytecode_diff(
 }
 
 fn render_empty_resource_changes(fmt: &dyn Formatter) -> RenderOutput {
-    if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+    if fmt.is_markdown() {
         stdout_only("(no resource changes)\n\n".to_string())
     } else {
         stdout_only(format!("    {}\n", style::dimmed("No resource changes.")))
@@ -401,7 +413,7 @@ fn render_resource_patch(
     fmt: &dyn Formatter,
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
 
     for change in &payload.resource_changes {
         let kind = resource_change_kind_label(change);
@@ -425,7 +437,7 @@ fn render_resource_change_content(
     fmt: &dyn Formatter,
     output: &mut RenderOutput,
 ) {
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     match (
         change.original_content.as_ref(),
         change.modified_content.as_ref(),
@@ -450,13 +462,11 @@ fn render_modified_resource(
     fmt: &dyn Formatter,
     output: &mut RenderOutput,
 ) {
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     let diff_text = if diff::is_xml_path(&change.relative_path) {
         diff::render_xml_diff(original, modified, 3, fmt.render_mode())
-    } else if is_md {
-        diff::render_markdown_diff(original, modified, 3)
     } else {
-        diff::render_colored_diff(original, modified, 3)
+        diff::render_diff(original, modified, 3, fmt.render_mode())
     };
 
     if diff_text.is_empty() {
@@ -486,7 +496,7 @@ fn render_generic_result(
     payload: &crate::types::EngineResultGenericResult,
     fmt: &dyn Formatter,
 ) -> RenderOutput {
-    if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+    if fmt.is_markdown() {
         stdout_only(format!(
             "**{}**:\n```\n{}\n```\n\n",
             payload.type_name, payload.text_representation
@@ -504,7 +514,7 @@ fn render_item_error(
     payload: &crate::types::EngineResultItemError,
     fmt: &dyn Formatter,
 ) -> RenderOutput {
-    if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+    if fmt.is_markdown() {
         stderr_only(format!("**Error**: {}\n\n", payload.message))
     } else {
         stderr_only(format!(
@@ -532,7 +542,7 @@ fn render_script_output(entries: &[ScriptOutputEntry], fmt: &dyn Formatter) -> S
         return String::new();
     }
 
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     let mut output = String::new();
 
     if is_md {
