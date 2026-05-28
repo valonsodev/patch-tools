@@ -32,14 +32,17 @@
         "assets": [
           {
             "path": "patch-tools/target/release/patch-tools",
+            "name": "patch-tools-linux-x86_64",
             "label": "patch-tools-linux-x86_64"
           },
           {
             "path": "patch-tools/target/aarch64-apple-darwin/release/patch-tools",
+            "name": "patch-tools-macos-aarch64",
             "label": "patch-tools-macos-aarch64"
           },
           {
             "path": "patch-tools/target/x86_64-pc-windows-gnu/release/patch-tools.exe",
+            "name": "patch-tools-windows-x86_64.exe",
             "label": "patch-tools-windows-x86_64.exe"
           }
         ]
