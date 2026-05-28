@@ -1,4 +1,3 @@
-use crate::diff;
 use crate::types::{DaemonResponse, daemon_response};
 
 use super::execution::render_execution_result;
@@ -50,7 +49,7 @@ pub(super) fn render_with(response: &DaemonResponse, fmt: &dyn Formatter) -> Ren
         daemon_response::Kind::StatusInfo(payload) => render_status_info(payload, fmt),
         daemon_response::Kind::ExecutionResult(payload) => {
             let mut output = RenderOutput::default();
-            if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+            if fmt.is_markdown() {
                 output.push_stdout(fmt.heading(1, "Execution results"));
             }
             output.extend(render_execution_result(&payload.events, fmt));
@@ -80,7 +79,7 @@ fn render_apk_loaded(
     let mut output = RenderOutput::default();
 
     if let Some(identity) = payload.identity.as_ref() {
-        if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+        if fmt.is_markdown() {
             output.push_stdout(fmt.heading(2, "APK loaded"));
             output.push_stdout(fmt.bullet(&format!(
                 "{}: {}",
@@ -118,7 +117,7 @@ fn render_status_info(
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
 
-    if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+    if fmt.is_markdown() {
         output.push_stdout(fmt.heading(2, "Daemon status"));
         output.push_stdout(fmt.bullet(&format!(
             "{}: {}",
@@ -169,7 +168,7 @@ fn render_fingerprint_result(
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
 
-    if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+    if fmt.is_markdown() {
         output.push_stdout(fmt.heading(2, "Fingerprints"));
         output.push_stdout(format!(
             "Generated {} fingerprint(s). Use the results below as-is; they already target unique matches.\n\n",
@@ -201,7 +200,7 @@ fn render_common_fingerprint_result(
     fmt: &dyn Formatter,
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
 
     if is_md {
         output.push_stdout(fmt.heading(2, "Common Fingerprints"));
@@ -256,7 +255,7 @@ fn render_search_result(
     fmt: &dyn Formatter,
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
 
     if is_md {
         output.push_stdout(fmt.heading(2, "Search results"));
@@ -284,7 +283,7 @@ fn render_method_map(
     fmt: &dyn Formatter,
 ) -> RenderOutput {
     let mut output = RenderOutput::default();
-    let is_md = matches!(fmt.render_mode(), diff::RenderMode::Markdown);
+    let is_md = fmt.is_markdown();
     let source_apk = payload.source_apk_ref();
     let target_apk = payload.target_apk_ref();
     let source_method = payload.source_method_ref();
@@ -366,7 +365,7 @@ fn render_method_smali(
         return stdout_only(fmt.warning("Method not found."));
     };
 
-    if matches!(fmt.render_mode(), diff::RenderMode::Markdown) {
+    if fmt.is_markdown() {
         stdout_only(fmt.code_block("smali", smali))
     } else {
         stdout_only(format!("{smali}\n"))
