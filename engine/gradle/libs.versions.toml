@@ -3,7 +3,7 @@ kotlin = "2.3.20"
 kotlinx = "1.10.2"
 
 # Morphe stuff
-morphe-patcher = "1.5.1"
+morphe-patcher = "1.5.2"
 morphe-patches-library = "1.3.4"
 morphe-smali = "d856bad65f"
 
