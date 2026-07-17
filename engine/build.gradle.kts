@@ -12,9 +12,6 @@ plugins {
 
 kotlin {
     jvmToolchain(17)
-    compilerOptions {
-        freeCompilerArgs = listOf("-Xcontext-parameters")
-    }
 }
 
 // Friend-paths: access `internal` members of morphe-patcher
@@ -25,6 +22,14 @@ val friends =
         isTransitive = false
     }
 configurations.findByName("implementation")?.extendsFrom(friends)
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "com.github.MorpheApp.smali") {
+            useVersion(libs.versions.morphe.smali.get())
+            because("Morphe Smali modules must use the same commit")
+        }
+    }
+}
 tasks.withType<KotlinCompile>().configureEach {
     friendPaths.from(friends.incoming.artifactView { }.files)
 }
@@ -53,4 +58,7 @@ wire {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveFileName.set("engine-all.jar")
+    filesMatching("META-INF/*.kotlin_module") {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
 }

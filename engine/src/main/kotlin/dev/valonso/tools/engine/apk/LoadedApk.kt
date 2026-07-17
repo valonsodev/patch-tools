@@ -12,6 +12,7 @@ import app.morphe.patcher.patch.ResourcePatch
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.rawResourcePatch
 import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patcher.resource.ResourceMode
 import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Method
@@ -223,7 +224,9 @@ class LoadedApk(
             }
         }
 
-        val deletedResourcePaths = patcher.deletedResourcePaths()
+        val resourceMode =
+            if (patches.any { it is ResourcePatch }) ResourceMode.FULL else ResourceMode.RAW_ONLY
+        val deletedResourcePaths = patcher.deletedResourcePaths(resourceMode)
         val resourceChanges =
             buildResourceChanges(
                 snapshotDir = snapshotDir,
@@ -324,7 +327,7 @@ class LoadedApk(
             }
         }
 
-        val deletedResourcePaths = patcher.deletedResourcePaths()
+        val deletedResourcePaths = patcher.deletedResourcePaths(ResourceMode.FULL)
         return buildResourceChanges(
             snapshotDir = snapshotDir,
             resourceTreeDir = resourceTreeDir,

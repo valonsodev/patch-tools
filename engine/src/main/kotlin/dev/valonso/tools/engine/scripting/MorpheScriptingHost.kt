@@ -75,7 +75,6 @@ class MorpheScriptingHost {
         }.onFailure { exception ->
             logger.error(exception) { "Preloading BasicJvmScriptingHost failed" }
         }
-        Unit
     }
 
     private suspend fun compile(script: SourceCode): ResultWithDiagnostics<CompiledScript> =
