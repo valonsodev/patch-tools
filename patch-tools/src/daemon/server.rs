@@ -41,9 +41,12 @@ impl SharedState {
 }
 
 pub async fn run(socket_path: &Path) -> Result<()> {
-    let _ = std::fs::remove_file(socket_path);
-    if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
+    #[cfg(not(windows))]
+    {
+        let _ = std::fs::remove_file(socket_path);
+        if let Some(parent) = socket_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
     }
 
     let engine_tx = spawn_engine_worker()?;
@@ -94,6 +97,7 @@ pub async fn run(socket_path: &Path) -> Result<()> {
     tracker.close();
     tracker.wait().await;
     drop(engine_tx); // closes the engine job channel; the worker exits and Drop-cleans the JVM.
+    #[cfg(not(windows))]
     let _ = std::fs::remove_file(socket_path);
     tracing::info!("Daemon shut down");
     Ok(())
