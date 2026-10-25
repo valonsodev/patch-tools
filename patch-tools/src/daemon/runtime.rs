@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 const MAIN_KTS_TEMPLATE: &str = include_str!(concat!(env!("OUT_DIR"), "/main.kts"));
 const AGENTS_MD_TEMPLATE: &str = include_str!(concat!(env!("OUT_DIR"), "/AGENTS.md"));
+#[cfg(not(windows))]
 const DAEMON_SOCKET_FILE: &str = ".patch-tools.sock";
 const DAEMON_START_LOG_FILE: &str = "patch-tools.log";
 
@@ -86,7 +87,7 @@ pub async fn stop(sock: &Path) -> Result<()> {
         anyhow::bail!("daemon returned stop error: {}", payload.message);
     }
 
-    wait_for_socket_removal(sock, std::time::Duration::from_secs(30)).await
+    wait_for_daemon_shutdown(sock, std::time::Duration::from_secs(30)).await
 }
 
 pub async fn run(sock: &Path) -> Result<()> {
@@ -101,8 +102,23 @@ pub async fn run(sock: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 pub fn socket_path() -> Result<PathBuf> {
     runtime_dir().map(|dir| dir.join(DAEMON_SOCKET_FILE))
+}
+
+#[cfg(windows)]
+pub fn socket_path() -> Result<PathBuf> {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    // Keep one daemon per directory, with the same pipe name in client and server processes.
+    let directory = runtime_dir()?.canonicalize()?;
+    let mut hash = DefaultHasher::new();
+    directory.as_os_str().hash(&mut hash);
+    Ok(PathBuf::from(format!(
+        r"\\.\pipe\patch-tools-{:016x}",
+        hash.finish()
+    )))
 }
 
 pub fn scaffold_scripts() -> Result<()> {
@@ -161,10 +177,17 @@ async fn is_expected_daemon_ready(sock: &Path, expected_pid: u32) -> Result<bool
     }
 }
 
-async fn wait_for_socket_removal(sock: &Path, timeout: std::time::Duration) -> Result<()> {
+async fn wait_for_daemon_shutdown(sock: &Path, timeout: std::time::Duration) -> Result<()> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        if !sock.exists() {
+        #[cfg(windows)]
+        let still_running = match tokio::net::windows::named_pipe::ClientOptions::new().open(sock) {
+            Ok(_) => true,
+            Err(error) => error.raw_os_error() == Some(231), // ERROR_PIPE_BUSY
+        };
+        #[cfg(not(windows))]
+        let still_running = sock.exists();
+        if !still_running {
             return Ok(());
         }
         if std::time::Instant::now() > deadline {
