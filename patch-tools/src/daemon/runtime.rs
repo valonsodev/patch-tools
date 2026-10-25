@@ -114,7 +114,7 @@ pub fn socket_path() -> Result<PathBuf> {
     // Keep one daemon per directory, with the same pipe name in client and server processes.
     let directory = runtime_dir()?.canonicalize()?;
     let mut hash = DefaultHasher::new();
-    directory.as_os_str().to_ascii_lowercase().hash(&mut hash);
+    directory.as_os_str().hash(&mut hash);
     Ok(PathBuf::from(format!(
         r"\\.\pipe\patch-tools-{:016x}",
         hash.finish()
@@ -181,7 +181,10 @@ async fn wait_for_daemon_shutdown(sock: &Path, timeout: std::time::Duration) -> 
     let deadline = std::time::Instant::now() + timeout;
     loop {
         #[cfg(windows)]
-        let still_running = DaemonClient::connect(sock).await.is_ok();
+        let still_running = match tokio::net::windows::named_pipe::ClientOptions::new().open(sock) {
+            Ok(_) => true,
+            Err(error) => error.raw_os_error() == Some(231), // ERROR_PIPE_BUSY
+        };
         #[cfg(not(windows))]
         let still_running = sock.exists();
         if !still_running {
